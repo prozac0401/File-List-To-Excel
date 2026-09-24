@@ -27,6 +27,7 @@ The upgrade fixture intentionally uses the current application payload in a lowe
 
 ## Interactive Windows 11 + Excel Desktop verification
 
+- The MSI-installed Explorer menu was invoked on two selected files and opened Excel with exactly those two rows.
 - A directory contained 20 files; selecting 3 produced exactly 3 rows in Excel.
 - Excel opened the workbook without a repair prompt and exposed a real table, filter headers, frozen first row, typed size/date cells and hyperlinks.
 - Korean filenames opened their actual original file from Excel.
@@ -43,7 +44,7 @@ These checks caught and fixed an Excel-specific UTF-8 hyperlink decoding problem
 
 Use a clean Windows account or VM: installer tests deliberately damage only the test installation and refuse to touch a pre-existing product installation. Normal source scripts keep strict registry-repair checks enabled.
 
-Local development observed an unexplained mismatch between a successful MSI registry-repair operation in the installer log and the registry value read by the test host after deliberately corrupting it. A diagnostic clone omitted only that corruption step; it is not a release gate. The unchanged strict test on the clean GitHub Windows runner is required before release.
+Local development observed an unexplained mismatch between a successful MSI registry-repair operation in the installer log and the registry value read by the test host after deliberately corrupting it. A diagnostic clone omitted only that corruption step; it is not a release gate. Direct Registry64 reads showed the same local mismatch, while the MSI-installed menu worked in the actual Explorer process and exported the selected files correctly. The cause of the test-host discrepancy is not established. The unchanged strict install/corrupted-registration repair/uninstall test passed on the clean GitHub Windows runner in [run 35945375111](https://github.com/prozac0401/File-List-To-Excel/actions/runs/35945375111). That run exposed a separate upgrade-test script issue; the full workflow must still pass before publication.
 
 ## Scope not established by these checks
 

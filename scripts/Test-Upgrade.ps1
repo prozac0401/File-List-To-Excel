@@ -38,12 +38,12 @@ function Get-MsiMetadata($Installer, [string]$Path) {
             try {
                 # Property names are fixed above; no user text is interpolated into SQL.
                 $view = $database.OpenView("SELECT Value FROM Property WHERE Property = '$property'")
-                $view.Execute()
+                [void]$view.Execute()
                 $record = $view.Fetch()
                 if ($null -eq $record) { throw "MSI is missing $($property): $Path" }
                 $values[$property] = $record.StringData(1)
             } finally {
-                if ($null -ne $view) { $view.Close() }
+                if ($null -ne $view) { [void]$view.Close() }
                 Release-ComObject $record
                 Release-ComObject $view
             }
