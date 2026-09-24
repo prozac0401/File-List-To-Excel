@@ -133,7 +133,7 @@ struct Extension {
         data->Release();
         Hr(hr, "Initialize real shell data object");
     }
-    void CheckMenu(int count, const wchar_t* firstLabel) {
+    void CheckMenu(int count, const wchar_t* firstLabel, const wchar_t* duplicateLabel = nullptr, const wchar_t* duplicateVerb = nullptr) {
         HMENU popup = CreatePopupMenu();
         Check(popup != nullptr, "Create menu");
         HRESULT hr = menu->QueryContextMenu(popup, 0, 10, 100, CMF_NORMAL);
@@ -147,7 +147,20 @@ struct Extension {
             wchar_t verb[64]{};
             Hr(menu->GetCommandString(static_cast<UINT_PTR>(i), GCS_VERBW, nullptr, reinterpret_cast<LPSTR>(verb), 64),
                 "Unicode canonical verb");
-            Check(std::wstring(verb) == (i ? L"filelisttoexcelrecursive" : L"filelisttoexcel"), "Canonical verb matches");
+            const wchar_t* expected = duplicateVerb && i == count - 1 ? duplicateVerb :
+                (i ? L"filelisttoexcelrecursive" : L"filelisttoexcel");
+            Check(std::wstring(verb) == expected, "Canonical verb matches");
+            char ansiVerb[64]{};
+            Hr(menu->GetCommandString(static_cast<UINT_PTR>(i), GCS_VERBA, nullptr, ansiVerb, 64), "ANSI canonical verb");
+            Check(std::string(ansiVerb) == filelist::Utf8(expected), "ANSI canonical verb matches");
+            wchar_t help[256]{};
+            Hr(menu->GetCommandString(static_cast<UINT_PTR>(i), GCS_HELPTEXTW, nullptr, reinterpret_cast<LPSTR>(help), 256),
+                "Localized command help");
+            Check(wcslen(help) != 0, "Command help is not empty");
+            if (duplicateLabel && i == count - 1) {
+                GetMenuStringW(popup, i, label, 256, MF_BYPOSITION);
+                Check(std::wstring(label) == duplicateLabel, "Correct duplicate menu label");
+            }
         }
         DestroyMenu(popup);
     }
@@ -177,7 +190,7 @@ void TestCodec() {
     Check(rejected, "Bound request byte size");
 }
 
-void TestDispatch(Extension& extension, Fixture& fixture, const std::vector<std::wstring>& paths, const char* mode, UINT offset, bool canonical = false) {
+void TestDispatch(Extension& extension, Fixture& fixture, const std::vector<std::wstring>& paths, const char* mode, UINT offset, bool canonical = false, bool ansi = false) {
     GUID captureId{};
     Hr(CoCreateGuid(&captureId), "Unique helper capture identity");
     wchar_t captureName[40]{};
@@ -189,9 +202,18 @@ void TestDispatch(Extension& extension, Fixture& fixture, const std::vector<std:
     CMINVOKECOMMANDINFOEX command{};
     command.cbSize = sizeof(command);
     command.lpVerb = MAKEINTRESOURCEA(offset);
+    wchar_t canonicalVerb[64]{};
+    char ansiVerb[64]{};
     if (canonical) {
-        command.fMask = CMIC_MASK_UNICODE;
-        command.lpVerbW = offset ? L"filelisttoexcelrecursive" : L"filelisttoexcel";
+        if (ansi) {
+            Hr(extension.menu->GetCommandString(offset, GCS_VERBA, nullptr, ansiVerb, 64), "Read invoked ANSI verb");
+            command.lpVerb = ansiVerb;
+        } else {
+            Hr(extension.menu->GetCommandString(offset, GCS_VERBW, nullptr, reinterpret_cast<LPSTR>(canonicalVerb), 64),
+                "Read invoked Unicode verb");
+            command.fMask = CMIC_MASK_UNICODE;
+            command.lpVerbW = canonicalVerb;
+        }
     }
     Hr(extension.menu->InvokeCommand(reinterpret_cast<CMINVOKECOMMANDINFO*>(&command)), "Invoke starts one helper");
     for (int attempt = 0; attempt < 200 && !std::filesystem::exists(capture); ++attempt) Sleep(25);
@@ -256,8 +278,15 @@ int wmain(int argc, wchar_t** argv) {
         {
             Extension extension(factory);
             Check(extension.init->Initialize(nullptr, nullptr, nullptr) == E_INVALIDARG, "Reject missing input");
+            extension.Select({first});
+            extension.CheckMenu(2, L"파일 목록을 Excel로", L"같은 파일 찾기", L"filelisttoexcelmatches");
+            if (dispatch) {
+                TestDispatch(extension, fixture, {first}, "matches", 1);
+                TestDispatch(extension, fixture, {first}, "matches", 1, true);
+                TestDispatch(extension, fixture, {first}, "matches", 1, true, true);
+            }
             extension.Select({first, second});
-            extension.CheckMenu(1, L"파일 목록을 Excel로");
+            extension.CheckMenu(2, L"파일 목록을 Excel로", L"선택 파일 중 중복 찾기", L"filelisttoexcelduplicatefiles");
             char verb[64]{};
             Hr(extension.menu->GetCommandString(0, GCS_VERBA, nullptr, verb, 64), "ANSI verb");
             Check(std::string(verb) == "filelisttoexcel", "ANSI verb matches");
@@ -266,20 +295,43 @@ int wmain(int argc, wchar_t** argv) {
             bad.cbSize = sizeof(bad);
             bad.lpVerb = MAKEINTRESOURCEA(30);
             Check(extension.menu->InvokeCommand(&bad) == E_INVALIDARG, "Reject unknown command");
-            if (dispatch) TestDispatch(extension, fixture, {first, second}, "files", 0);
+            if (dispatch) {
+                TestDispatch(extension, fixture, {first, second}, "files", 0);
+                TestDispatch(extension, fixture, {first, second}, "duplicate-files", 1);
+                TestDispatch(extension, fixture, {first, second}, "duplicate-files", 1, true);
+                TestDispatch(extension, fixture, {first, second}, "duplicate-files", 1, true, true);
+            }
+            bad.lpVerb = "filelisttoexcelmatches";
+            Check(extension.menu->InvokeCommand(&bad) == E_INVALIDARG, "Multiple files reject matches canonical verb");
+            bad.lpVerb = "filelisttoexcelduplicates";
+            Check(extension.menu->InvokeCommand(&bad) == E_INVALIDARG, "Files reject folder duplicates canonical verb");
             const auto archive = fixture.File(L"archive.zip");
+            extension.SelectShellData({archive});
+            extension.CheckMenu(2, L"파일 목록을 Excel로", L"같은 파일 찾기", L"filelisttoexcelmatches");
             extension.SelectShellData({first, archive});
-            extension.CheckMenu(1, L"파일 목록을 Excel로");
+            extension.CheckMenu(2, L"파일 목록을 Excel로", L"선택 파일 중 중복 찾기", L"filelisttoexcelduplicatefiles");
             extension.SelectShellData({folder, archive});
             extension.CheckMenu(2, L"선택 항목을 Excel로");
+            extension.Select({folder});
+            extension.CheckMenu(3, L"폴더 내용 목록을 Excel로", L"중복 파일 찾기", L"filelisttoexcelduplicates");
+            if (dispatch) {
+                TestDispatch(extension, fixture, {folder}, "duplicates", 2);
+                TestDispatch(extension, fixture, {folder}, "duplicates", 2, true);
+                TestDispatch(extension, fixture, {folder}, "duplicates", 2, true, true);
+            }
             extension.Select({folder, folder2});
-            extension.CheckMenu(2, L"폴더 내용 목록을 Excel로");
+            extension.CheckMenu(3, L"폴더 내용 목록을 Excel로", L"중복 파일 찾기", L"filelisttoexcelduplicates");
             if (dispatch) {
                 TestDispatch(extension, fixture, {folder, folder2}, "folder", 0);
                 TestDispatch(extension, fixture, {folder, folder2}, "recursive", 1);
+                TestDispatch(extension, fixture, {folder, folder2}, "duplicates", 2);
             }
             extension.Select({first, folder});
             extension.CheckMenu(2, L"선택 항목을 Excel로");
+            for (const char* duplicateVerb : {"filelisttoexcelmatches", "filelisttoexcelduplicates", "filelisttoexcelduplicatefiles"}) {
+                bad.lpVerb = duplicateVerb;
+                Check(extension.menu->InvokeCommand(&bad) == E_INVALIDARG, "Mixed selection rejects duplicate canonical commands");
+            }
             if (dispatch) {
                 TestDispatch(extension, fixture, {first, folder}, "files", 0);
                 TestDispatch(extension, fixture, {first, folder}, "recursive", 1);
@@ -289,21 +341,33 @@ int wmain(int argc, wchar_t** argv) {
                 for (int index = 0; index < 10000; ++index)
                     many.push_back((fixture.directory / (L"large-selection-" + std::to_wstring(index) + L".txt")).wstring());
                 extension.Select(many);
-                extension.CheckMenu(1, L"파일 목록을 Excel로");
+                extension.CheckMenu(2, L"파일 목록을 Excel로", L"선택 파일 중 중복 찾기", L"filelisttoexcelduplicatefiles");
                 TestDispatch(extension, fixture, many, "files", 0, true);
+                TestDispatch(extension, fixture, many, "duplicate-files", 1, true);
             }
             PIDLIST_ABSOLUTE pidl = nullptr;
             Hr(SHParseDisplayName(folder.c_str(), nullptr, &pidl, 0, nullptr), "Create background PIDL");
             HRESULT initialized = extension.init->Initialize(pidl, nullptr, nullptr);
             CoTaskMemFree(pidl);
             Hr(initialized, "Initialize folder background");
-            extension.CheckMenu(2, L"현재 폴더 목록을 Excel로");
-            if (dispatch) TestDispatch(extension, fixture, {folder}, "folder", 0);
+            extension.CheckMenu(3, L"현재 폴더 목록을 Excel로", L"현재 폴더 중복 파일 찾기", L"filelisttoexcelduplicates");
+            if (dispatch) {
+                TestDispatch(extension, fixture, {folder}, "folder", 0);
+                TestDispatch(extension, fixture, {folder}, "duplicates", 2);
+            }
             HMENU popup = CreatePopupMenu();
             Check(HRESULT_CODE(extension.menu->QueryContextMenu(popup, 0, 1, 2, CMF_DEFAULTONLY)) == 0, "Honor default-only menus");
             Check(GetMenuItemCount(popup) == 0, "Default-only inserts no menu");
             Check(HRESULT_CODE(extension.menu->QueryContextMenu(popup, 0, 1, 1, CMF_NORMAL)) == 1, "Honor command identifier capacity");
             Check(GetMenuItemCount(popup) == 1, "One available identifier creates one menu");
+            DestroyMenu(popup);
+            popup = CreatePopupMenu();
+            Check(HRESULT_CODE(extension.menu->QueryContextMenu(popup, 0, 1, 2, CMF_NORMAL)) == 2, "Two identifiers retain only list commands");
+            wchar_t limitedVerb[64]{};
+            Hr(extension.menu->GetCommandString(1, GCS_VERBW, nullptr, reinterpret_cast<LPSTR>(limitedVerb), 64), "Limited recursive verb");
+            Check(std::wstring(limitedVerb) == L"filelisttoexcelrecursive", "Duplicate command does not displace recursive command");
+            bad.lpVerb = MAKEINTRESOURCEA(2);
+            Check(extension.menu->InvokeCommand(&bad) == E_INVALIDARG, "Unavailable numeric duplicate identifier rejected");
             DestroyMenu(popup);
         }
         factory->LockServer(TRUE);

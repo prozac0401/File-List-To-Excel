@@ -1,6 +1,6 @@
 # File List to Excel
 
-Windows 탐색기에서 선택한 파일과 폴더의 목록을 Excel 표로 여는 Windows 11 x64 도구입니다. 설정 창, 계정, 상주 서비스 없이 실행합니다.
+Windows 탐색기에서 선택한 파일과 폴더의 목록을 Excel 표로 열고, 내용이 같은 파일을 찾는 Windows 11 x64 도구입니다. 설정 창, 계정, 상주 서비스 없이 실행합니다.
 
 ## 설치와 사용
 
@@ -21,10 +21,25 @@ Excel Desktop을 우선 실행합니다. 설치되어 있지 않으면 기본 .x
 - 이름·종류·byte 크기·표시 크기·수정일·생성일·상위 폴더·상대경로·전체경로·깊이·속성·기준 폴더를 기록합니다.
 - 숫자와 날짜는 Excel 값으로 저장합니다. 표, 필터, 첫 행 고정, 원본 파일/폴더 링크를 제공합니다.
 - 약 700ms 이상 걸리는 작업은 발견 개수와 현재 경로, 취소 버튼을 표시합니다.
-- 파일 내용은 읽지 않습니다. 다운로드를 요청하거나 해시·문서 분석을 실행하지 않습니다.
+- 기존 파일 목록 명령은 파일 내용을 읽지 않습니다. 다운로드를 요청하거나 해시·문서 분석을 실행하지 않습니다.
 - 읽기 실패는 Errors 시트에 기록하고 계속합니다. 원본 파일을 변경하거나 삭제하지 않습니다.
 
 생성 파일은 %TEMP%/FileListToExcel에 저장합니다. 사용자가 저장한 결과와 임시 Excel 파일은 제거 시 삭제하지 않습니다. Windows의 임시 파일 정리 대상이 될 수 있으므로 보관할 결과는 별도 저장하세요. 진단 오류는 %LOCALAPPDATA%/FileListToExcel/Logs/last-error.log에 저장하며 네트워크로 전송하지 않습니다.
+
+## 중복 파일 찾기 (v1.1)
+
+- 파일 하나 → **같은 파일 찾기**: 해당 파일의 현재 폴더와 하위 폴더에서 같은 내용을 찾습니다. 기준 파일은 결과 상단에 표시하고 결과 행에서는 제외합니다.
+- 파일 여러 개 → **선택 파일 중 중복 찾기**: 선택한 파일끼리만 비교합니다.
+- 폴더 하나 또는 여러 개 → **중복 파일 찾기**: 선택 폴더 전체를 합쳐 재귀 검사합니다.
+- 폴더 빈 공간 → **현재 폴더 중복 파일 찾기**. 파일·폴더 혼합 선택에서는 기존 목록 메뉴를 제공합니다.
+
+파일명·확장자와 관계없이 **크기 → Quick Fingerprint → SHA-256**으로 비교합니다. 크기가 혼자인 파일은 읽지 않습니다. 1 MiB 이하 후보는 SHA-256을 한 번 계산하고, 큰 파일은 시작·중간·끝 64 KiB씩 읽은 지문이 같은 후보만 전체 해시합니다. 0 byte 파일은 읽지 않고 그룹화합니다. 읽기는 4 MiB 버퍼와 최대 2개 worker를 사용하며 UNC 경로는 1개 worker를 사용합니다.
+
+결과는 `Duplicates` 또는 `Matches`, `Summary`, `Errors`, `Skipped` 시트로 구성됩니다. 큰 중복 그룹부터 표시하며 숫자 크기, 날짜, 필터, 고정 행과 파일 링크를 제공합니다. 예상 중복 용량은 그룹마다 한 파일을 남긴다는 가정의 계산값입니다. **원본을 삭제·이동·수정하거나 정리를 권고하지 않습니다.**
+
+Hash Cache는 `%LOCALAPPDATA%/FileListToExcel/hash_cache.sqlite`에 저장됩니다. 경로·크기·UTC 수정시간·알고리즘이 같을 때 재사용하고, 손상된 캐시는 보관 후 재생성합니다. 사용할 수 없으면 캐시 없이 검사합니다. 캐시와 생성한 Excel은 제거 후에도 보존됩니다. 앱을 종료한 상태에서 캐시를 삭제해도 다음 검사에서 다시 생성됩니다.
+
+Cloud-only(Offline/Recall) 파일을 내려받지 않습니다. 중복 검사에서는 안전을 위해 모든 파일/폴더 reparse point와 그 경유 경로를 제외하므로, 로컬에 내려받은 OneDrive 항목도 reparse 속성이 남아 있으면 제외됩니다. 접근 거부·사용 중·검사 중 변경된 파일은 기록하고 나머지를 계속 검사합니다. 약 700 ms 이후 단계별 진행 창과 취소 버튼이 나타납니다.
 
 ## 대량 및 예외 처리
 
@@ -40,8 +55,14 @@ Excel 링크 제한을 피하기 위해 시트당 65,000행을 기록하고 File
     FileListToExcel.exe --folder "C:/자료" "D:/자료"
     FileListToExcel.exe --recursive "C:/자료"
     FileListToExcel.exe --recursive "C:/자료" --no-open --output "C:/결과/목록.xlsx"
+    FileListToExcel.exe --matches "C:/자료/기준.txt"
+    FileListToExcel.exe --duplicates "C:/자료" "D:/백업"
+    FileListToExcel.exe --duplicate-files "C:/자료/원본.txt" "D:/백업/복사본.txt"
+    FileListToExcel.exe --duplicates "C:/자료" --no-cache --no-open --output "C:/결과/중복.xlsx"
 
 --no-open은 진행 창과 자동 열기를 사용하지 않는 자동화 모드입니다. --output은 기존 파일을 덮어쓰지 않습니다. 종료 코드: 0 생성 성공(Errors 시트의 개별 오류 포함), 1 실행 실패, 2 취소. 셸 연동의 --request는 제품의 GUID 요청 파일만 수용합니다.
+
+`--no-cache`는 중복 검사에서 캐시 조회와 저장을 생략하는 진단 옵션입니다. 일반 우클릭 실행에서는 옵션 창이 추가되지 않습니다.
 
 ## 개발 및 검증
 
@@ -53,6 +74,8 @@ Excel 링크 제한을 피하기 위해 시트당 65,000행을 기록하고 File
 Build.ps1은 관리 코드 테스트, 자체 포함 앱 게시, 네이티브 셸 테스트, WiX MSI 빌드 및 SHA-256 생성을 수행합니다. -TestInstaller는 기존 설치가 없는 환경에서 설치·복구·제거를 검증합니다. 결과는 artifacts/release에 생성됩니다. CI는 Windows에서 같은 검증을 실행하고 main에 포함된 v* 태그만 릴리스합니다.
 
 명세: [FileListToExcel_SPEC_v1.md](https://github.com/prozac0401/File-List-To-Excel/blob/main/FileListToExcel_SPEC_v1.md). 설계: [docs/ARCHITECTURE.md](https://github.com/prozac0401/File-List-To-Excel/blob/main/docs/ARCHITECTURE.md). 검증 상태: [docs/VALIDATION.md](https://github.com/prozac0401/File-List-To-Excel/blob/main/docs/VALIDATION.md).
+
+중복 기능 명세: [작업지시서](FileListToExcel_DuplicateFinder_WorkOrder.md). [구현 보고서](docs/DUPLICATE_FINDER_REPORT.md), [Milestone별 검증](docs/DUPLICATE_FINDER_VALIDATION.md), [성능 측정 재현](tests/FileListToExcel.Benchmarks/README.md).
 
 ## 배포 상태
 

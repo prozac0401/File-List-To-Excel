@@ -155,13 +155,55 @@ class ShellExtension final : public IShellExtInit, public IContextMenu {
     bool background_ = false;
     bool hasFolder_ = false;
     bool hasFile_ = false;
+    enum class Command { List, Recursive, Matches, Duplicates, SelectedDuplicates };
+    Command commands_[3]{};
     UINT commandCount_ = 0;
 
-    const char* Mode(UINT command) const { return command == 1 ? "recursive" : (hasFolder_ && !hasFile_ ? "folder" : "files"); }
-    const wchar_t* Verb(UINT command) const { return command == 1 ? L"filelisttoexcelrecursive" : L"filelisttoexcel"; }
-    const wchar_t* Help(UINT command) const {
-        return command == 1 ? L"선택 폴더의 하위 항목을 포함하여 Excel 목록을 만듭니다." :
-            L"현재 선택한 파일 또는 폴더 내용으로 Excel 목록을 만듭니다.";
+    bool Available(Command command) const {
+        switch (command) {
+        case Command::List: return !paths_.empty();
+        case Command::Recursive: return hasFolder_;
+        case Command::Matches: return hasFile_ && !hasFolder_ && paths_.size() == 1;
+        case Command::Duplicates: return hasFolder_ && !hasFile_;
+        case Command::SelectedDuplicates: return hasFile_ && !hasFolder_ && paths_.size() >= 2;
+        }
+        return false;
+    }
+    const char* Mode(Command command) const {
+        switch (command) {
+        case Command::Recursive: return "recursive";
+        case Command::Matches: return "matches";
+        case Command::Duplicates: return "duplicates";
+        case Command::SelectedDuplicates: return "duplicate-files";
+        default: return hasFolder_ && !hasFile_ ? "folder" : "files";
+        }
+    }
+    const wchar_t* Verb(Command command) const {
+        switch (command) {
+        case Command::Recursive: return L"filelisttoexcelrecursive";
+        case Command::Matches: return L"filelisttoexcelmatches";
+        case Command::Duplicates: return L"filelisttoexcelduplicates";
+        case Command::SelectedDuplicates: return L"filelisttoexcelduplicatefiles";
+        default: return L"filelisttoexcel";
+        }
+    }
+    const char* VerbA(Command command) const {
+        switch (command) {
+        case Command::Recursive: return "filelisttoexcelrecursive";
+        case Command::Matches: return "filelisttoexcelmatches";
+        case Command::Duplicates: return "filelisttoexcelduplicates";
+        case Command::SelectedDuplicates: return "filelisttoexcelduplicatefiles";
+        default: return "filelisttoexcel";
+        }
+    }
+    const wchar_t* Help(Command command) const {
+        switch (command) {
+        case Command::Recursive: return L"선택 폴더의 하위 항목을 포함하여 Excel 목록을 만듭니다.";
+        case Command::Matches: return L"선택 파일의 현재 폴더와 하위 폴더에서 내용이 같은 파일을 찾습니다.";
+        case Command::Duplicates: return L"선택 폴더와 하위 폴더에서 내용이 같은 파일을 찾아 Excel로 표시합니다.";
+        case Command::SelectedDuplicates: return L"선택한 파일끼리만 내용을 비교하여 중복 파일을 Excel로 표시합니다.";
+        default: return L"현재 선택한 파일 또는 폴더 내용으로 Excel 목록을 만듭니다.";
+        }
     }
 public:
     ShellExtension() { ++objectCount; }
@@ -251,35 +293,59 @@ public:
         const wchar_t* primary = background_ ? L"현재 폴더 목록을 Excel로" :
             (!hasFolder_ ? L"파일 목록을 Excel로" : (hasFile_ ? L"선택 항목을 Excel로" : L"폴더 내용 목록을 Excel로"));
         if (!InsertMenuW(menu, position, MF_BYPOSITION | MF_STRING, firstId, primary)) return LastErrorResult();
-        commandCount_ = 1;
+        commands_[commandCount_++] = Command::List;
         if (hasFolder_ && lastId > firstId) {
             const wchar_t* recursive = background_ ? L"현재 폴더 + 하위 폴더를 Excel로" :
                 (hasFile_ ? L"선택 폴더 + 하위 폴더를 Excel로" : L"하위 폴더까지 Excel로");
-            if (InsertMenuW(menu, position + 1, MF_BYPOSITION | MF_STRING, firstId + 1, recursive)) commandCount_ = 2;
+            if (InsertMenuW(menu, position + commandCount_, MF_BYPOSITION | MF_STRING, firstId + commandCount_, recursive))
+                commands_[commandCount_++] = Command::Recursive;
+        }
+        // Keep the established list commands first. Mixed selections retain their
+        // existing behavior and do not offer an ambiguous duplicate search.
+        if (!(hasFile_ && hasFolder_) && commandCount_ <= lastId - firstId) {
+            const Command duplicate = hasFolder_ ? Command::Duplicates :
+                (paths_.size() == 1 ? Command::Matches : Command::SelectedDuplicates);
+            const wchar_t* label = hasFolder_ ? (background_ ? L"현재 폴더 중복 파일 찾기" : L"중복 파일 찾기") :
+                (paths_.size() == 1 ? L"같은 파일 찾기" : L"선택 파일 중 중복 찾기");
+            if (Available(duplicate) &&
+                InsertMenuW(menu, position + commandCount_, MF_BYPOSITION | MF_STRING, firstId + commandCount_, label))
+                commands_[commandCount_++] = duplicate;
         }
         return MAKE_HRESULT(SEVERITY_SUCCESS, 0, commandCount_);
     }
     HRESULT STDMETHODCALLTYPE InvokeCommand(CMINVOKECOMMANDINFO* info) override {
         if (!info || info->cbSize < sizeof(CMINVOKECOMMANDINFO) || paths_.empty()) return E_INVALIDARG;
-        UINT command = 0;
+        Command command = Command::List;
         bool byName = false;
+        bool found = false;
+        constexpr Command known[]{Command::List, Command::Recursive, Command::Matches,
+            Command::Duplicates, Command::SelectedDuplicates};
         if (info->cbSize >= sizeof(CMINVOKECOMMANDINFOEX) && (info->fMask & CMIC_MASK_UNICODE)) {
             auto* extended = reinterpret_cast<CMINVOKECOMMANDINFOEX*>(info);
             if (!IS_INTRESOURCE(extended->lpVerbW)) {
                 byName = true;
-                if (_wcsicmp(extended->lpVerbW, Verb(0)) == 0) command = 0;
-                else if (_wcsicmp(extended->lpVerbW, Verb(1)) == 0) command = 1;
-                else return E_INVALIDARG;
+                for (Command candidate : known) {
+                    if (_wcsicmp(extended->lpVerbW, Verb(candidate)) == 0) {
+                        command = candidate; found = true; break;
+                    }
+                }
             }
         }
         if (!byName && !IS_INTRESOURCE(info->lpVerb)) {
             byName = true;
-            if (_stricmp(info->lpVerb, "filelisttoexcel") == 0) command = 0;
-            else if (_stricmp(info->lpVerb, "filelisttoexcelrecursive") == 0) command = 1;
-            else return E_INVALIDARG;
+            for (Command candidate : known) {
+                if (_stricmp(info->lpVerb, VerbA(candidate)) == 0) {
+                    command = candidate; found = true; break;
+                }
+            }
         }
-        if (!byName) command = LOWORD(info->lpVerb);
-        if (command > 1 || (command == 1 && !hasFolder_) || (!byName && command >= commandCount_)) return E_INVALIDARG;
+        if (byName && !found) return E_INVALIDARG;
+        if (!byName) {
+            const UINT offset = LOWORD(info->lpVerb);
+            if (offset >= commandCount_) return E_INVALIDARG;
+            command = commands_[offset];
+        }
+        if (!Available(command)) return E_INVALIDARG;
         return LaunchHelper(info->hwnd, Mode(command), paths_);
     }
     HRESULT STDMETHODCALLTYPE GetCommandString(UINT_PTR id, UINT flags, UINT*, LPSTR result, UINT count) override {
@@ -290,12 +356,12 @@ public:
         const bool unicode = flags == GCS_VERBW || flags == GCS_HELPTEXTW;
         if (!verb && flags != GCS_HELPTEXTA && flags != GCS_HELPTEXTW) return E_INVALIDARG;
         if (unicode) {
-            const wchar_t* text = verb ? Verb(static_cast<UINT>(id)) : Help(static_cast<UINT>(id));
+            const wchar_t* text = verb ? Verb(commands_[id]) : Help(commands_[id]);
             size_t length = wcslen(text);
             if (length >= count) return HRESULT_FROM_WIN32(ERROR_INSUFFICIENT_BUFFER);
             memcpy(result, text, (length + 1) * sizeof(wchar_t));
         } else {
-            const char* text = verb ? (id == 1 ? "filelisttoexcelrecursive" : "filelisttoexcel") :
+            const char* text = verb ? VerbA(commands_[id]) :
                 "Create an Excel workbook from the selected filesystem items.";
             size_t length = strlen(text);
             if (length >= count) return HRESULT_FROM_WIN32(ERROR_INSUFFICIENT_BUFFER);

@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version = '1.0.0',
+    [ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version = '1.1.0',
     [string]$ProjectUrl = 'https://github.com/prozac0401/File-List-To-Excel',
     [string]$NativeToolchain,
     [switch]$TestInstaller
@@ -125,6 +125,11 @@ try {
         New-Item -ItemType Directory -Path $nativeNoticeDestination -Force | Out-Null
         Get-ChildItem -LiteralPath $nativeNotices | Copy-Item -Destination $nativeNoticeDestination -Recurse -Force
     }
+    $sqliteNotices = Join-Path $repo 'docs/licenses/sqlite'
+    $sqliteNoticeDestination = Join-Path $publish 'licenses/sqlite'
+    if (-not (Test-Path -LiteralPath $sqliteNotices -PathType Container)) { throw 'SQLite dependency license documents are missing.' }
+    New-Item -ItemType Directory -Path $sqliteNoticeDestination -Force | Out-Null
+    Get-ChildItem -LiteralPath $sqliteNotices | Copy-Item -Destination $sqliteNoticeDestination -Recurse -Force
     $wixLicenseDirectory = Join-Path $publish 'licenses/WiX'
     New-Item -ItemType Directory -Path $wixLicenseDirectory -Force | Out-Null
     Copy-Item -LiteralPath (Join-Path $repo 'installer/LICENSE-WIX.txt') -Destination $wixLicenseDirectory

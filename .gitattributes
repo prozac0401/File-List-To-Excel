@@ -12,4 +12,6 @@
 *.manifest text eol=lf
 # Preserve upstream notices verbatim, including their whitespace.
 docs/licenses/native/*.txt -text -whitespace
+docs/licenses/sqlite/*.txt -text -whitespace
+docs/licenses/sqlite/*.html -text -whitespace
 installer/LICENSE-WIX.txt -text -whitespace

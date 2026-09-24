@@ -1,6 +1,6 @@
 # Architecture
 
-The v1 specification is the product boundary. No content analysis, accounts, resident service or custom result viewer is introduced.
+The original file-list specification remains unchanged for list commands. Version 1.1 adds the duplicate-finder work order as a separate operation; no accounts, resident service, deletion or custom result viewer are introduced.
 
 1. Native COM DLL implements IShellExtInit/IContextMenu in the classic Explorer menu. It receives the full CF_HDROP selection or a directory-background PIDL.
 2. A single, uniquely named JSON request is created in the user's LocalAppData/FileListToExcel/Requests directory. One helper invocation receives its path, avoiding command-line limits and per-file launches.
@@ -14,3 +14,13 @@ MSI installs per user under LocalAppData/Programs/FileListToExcel with HKCU COM 
 The product uses .NET 10 LTS with self-contained Windows x64 deployment. Windows 11 modern context menu integration and ARM64 are outside this release. The classic menu is an explicitly accepted specification option.
 
 Safety boundaries: never follow arbitrary request-file paths for deletion; never overwrite a chosen output; never interpret file names as Excel formulas; no source file modifications; no telemetry; diagnostics remain local. Enumeration may expose file paths in the workbook and local error log as required by the feature.
+
+## Duplicate operation
+
+The same COM selection/request path carries `matches`, `duplicates`, or `duplicate-files`. `DuplicateScanService` resolves the selection and reuses `FileScanner` with an opt-in policy that excludes every reparse directory and its ancestors. The original scanner default and list commands retain their metadata-only behavior.
+
+`DuplicateDetector` groups metadata by size, computes a versioned SHA-256 fingerprint over length and first/middle/last 64 KiB for large candidates, and computes full streaming SHA-256 only for surviving groups. Candidates at most 1 MiB use one full hash; empty files require no content reads. Up to two workers own pooled 4 MiB buffers; UNC selections use one worker. Pre/post size and UTC timestamp checks reject changed sources. Native read-only handles refuse writers, reparse processing and recall; handle metadata is checked before content reads and afterward.
+
+`SqliteHashCache` stores the current size, 100 ns UTC modification ticks, algorithm version, quick/full hashes and check time for each normalized path. Connections serialize access, use WAL/atomic upserts and a one-second contention timeout. Cache failure never prevents comparison. Invalid caches are quarantined; future schema versions are left intact and ignored. Cache/sidecar paths are excluded from source candidates. This is metadata-based cache reuse, not filesystem snapshot or tamper detection.
+
+`WorkbookWriter.WriteDuplicates` adds Duplicates/Matches/Summary/Errors/Skipped using the existing SheetBuilder, OOXML package, types, escaping, styles, filters and links. Optional header offsets support reference metadata and configurable hyperlink columns; existing list defaults are unchanged. Output uses the same atomic staging/no-overwrite pattern. WinForms uses the existing delayed window/message loop and cancellation path.
