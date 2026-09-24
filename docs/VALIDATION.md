@@ -4,7 +4,7 @@
 
 The Windows CI workflow runs the same scripts as local development. Publication is gated on managed tests, native integration tests, MSI validation, install/repair/uninstall, and a major-upgrade test. A release tag must point to a commit already contained in main. Test evidence and installer logs are uploaded as workflow artifacts.
 
-The suite contains **26 core tests**, **9 application tests**, and **157 native integration assertions**. Counts refer to this release, not an assurance of exhaustive coverage.
+The suite contains **26 core tests**, **9 application tests**, and **159 native integration assertions**. Counts refer to this release, not an assurance of exhaustive coverage.
 
 ## Automated coverage
 

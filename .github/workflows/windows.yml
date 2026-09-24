@@ -45,6 +45,7 @@ jobs:
           name: windows-test-evidence
           path: |
             artifacts/test-results
+            artifacts/shell/Testing/Temporary
             artifacts/installer-smoke
             artifacts/upgrade-smoke
           if-no-files-found: warn

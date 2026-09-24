@@ -68,12 +68,21 @@ struct Fixture {
     std::filesystem::path directory;
     Fixture() {
         wchar_t temp[32768]{};
-        Check(GetTempPathW(32768, temp) != 0, "GetTempPath");
+        DWORD tempLength = GetTempPathW(32768, temp);
+        Check(tempLength > 0 && tempLength < 32768, "GetTempPath");
+        // Hosted Windows runners may expose TEMP through an 8.3 username
+        // (RUNNER~1). Explorer resolves PIDLs to long names. Normalize the
+        // fixture once so exact request comparisons use the same real path.
+        DWORD longLength = GetLongPathNameW(temp, nullptr, 0);
+        Check(longLength != 0, "Measure long temporary directory path");
+        std::vector<wchar_t> longTemp(longLength);
+        DWORD resolvedLength = GetLongPathNameW(temp, longTemp.data(), longLength);
+        Check(resolvedLength > 0 && resolvedLength < longLength, "Resolve long temporary directory path");
         GUID id{};
         Hr(CoCreateGuid(&id), "Test GUID");
         wchar_t text[40]{};
         StringFromGUID2(id, text, 40);
-        directory = std::filesystem::path(temp) / (std::wstring(L"FileListToExcel-ShellTests-") + text);
+        directory = std::filesystem::path(longTemp.data()) / (std::wstring(L"FileListToExcel-ShellTests-") + text);
         std::filesystem::create_directory(directory);
     }
     ~Fixture() {
