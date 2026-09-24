@@ -4,6 +4,7 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 if (-not [Environment]::Is64BitProcess) { throw 'Use 64-bit PowerShell for installer tests.' }
 $repo = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot 'Test-InstalledDuplicates.ps1')
 $MsiPath = (Resolve-Path -LiteralPath $MsiPath).Path
 $installDirectory = Join-Path $env:LOCALAPPDATA 'Programs/FileListToExcel'
 $clsid = '{AF7A7218-8B84-4A11-9790-EB24A43EC39E}'
@@ -34,6 +35,7 @@ New-Item -ItemType Directory -Path $fixture -Force | Out-Null
 [IO.File]::WriteAllText((Join-Path $fixture 'two with spaces.txt'), 'two')
 $output = Join-Path $logs 'installed-output.xlsx'
 $installed = $false
+$duplicateRetained = @()
 function Run-Msi([string[]]$Arguments, [string]$Log) {
     $quoted = @($Arguments | ForEach-Object { if ($_ -match '[\s"]') { '"' + $_.Replace('"', '\"') + '"' } else { $_ } })
     $process = Start-Process -FilePath (Join-Path $env:WINDIR 'System32/msiexec.exe') -ArgumentList ($quoted -join ' ') -PassThru -Wait -WindowStyle Hidden
@@ -70,6 +72,7 @@ try {
         $rows = $sheet.SelectNodes('//*[local-name()="sheetData"]/*[local-name()="row"]')
         if ($rows.Count -ne 3) { throw "Expected two file rows and one header; found $($rows.Count) rows." }
     } finally { $zip.Dispose() }
+    $duplicateRetained = Test-InstalledDuplicateWorkbooks $helper $logs
     # Repair exercises registration and payload consistency on an already installed package.
     Remove-Item -LiteralPath $helper -Force
     Set-Item -LiteralPath $registryPaths[2] -Value '{00000000-0000-0000-0000-000000000000}'
@@ -78,6 +81,8 @@ try {
     if (-not (Test-Path -LiteralPath $helper)) { throw 'Repair did not restore the missing application.' }
     $repairedHandler = (Get-Item -LiteralPath $registryPaths[2]).GetValue('')
     if ($repairedHandler -ne $clsid) { throw ('Repair did not restore the context-menu registration. Actual value: ' + $repairedHandler) }
+    Assert-DuplicateTestRetention $duplicateRetained
+    Assert-NoInstalledHelper $helper
 } finally {
     if ($installed) {
         $uninstallLog = Join-Path $logs 'uninstall.log'
@@ -87,4 +92,6 @@ try {
 foreach ($key in $registryPaths) { if (Test-Path -LiteralPath $key) { throw "Uninstall left product registry data: $key" } }
 if (Test-Path -LiteralPath $installDirectory) { throw "Uninstall left the application directory: $installDirectory" }
 if (-not (Test-Path -LiteralPath $output)) { throw 'Uninstall removed a user-generated workbook.' }
-Write-Host "Installer smoke passed: install, native integration, helper, repair, uninstall, workbook retention. Logs: $logs"
+Assert-DuplicateTestRetention $duplicateRetained
+Assert-NoInstalledHelper (Join-Path $installDirectory 'FileListToExcel.exe')
+Write-Host "Installer smoke passed: install, native integration, existing list, duplicate/matches/selection, SQLite reuse, repair, uninstall, source/workbook/cache retention, no helper process. Logs: $logs"

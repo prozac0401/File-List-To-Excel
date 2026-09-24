@@ -8,6 +8,7 @@ Set-StrictMode -Version Latest
 if (-not [Environment]::Is64BitProcess) { throw 'Use 64-bit PowerShell for upgrade tests.' }
 
 $repo = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot 'Test-InstalledDuplicates.ps1')
 $PreviousMsiPath = (Resolve-Path -LiteralPath $PreviousMsiPath).Path
 $MsiPath = (Resolve-Path -LiteralPath $MsiPath).Path
 $installDirectory = [IO.Path]::GetFullPath((Join-Path $env:LOCALAPPDATA 'Programs/FileListToExcel'))
@@ -167,6 +168,7 @@ $cleanupFailures = New-Object 'System.Collections.Generic.List[string]'
 $previous = $null
 $current = $null
 $logs = $null
+$duplicateRetained = @()
 try {
     $previous = Get-MsiMetadata $windowsInstaller $PreviousMsiPath
     $current = Get-MsiMetadata $windowsInstaller $MsiPath
@@ -207,6 +209,8 @@ try {
     New-TestWorkbook $userWorkbook
     $userWorkbookHash = (Get-FileHash -LiteralPath $userWorkbook -Algorithm SHA256).Hash
 
+    $cachePath = Join-Path $env:LOCALAPPDATA 'FileListToExcel/hash_cache.sqlite'
+    $cacheBeforeUpgrade = if (Test-Path -LiteralPath $cachePath -PathType Leaf) { (Get-FileHash -LiteralPath $cachePath -Algorithm SHA256).Hash } else { $null }
     $upgradeLog = Join-Path $logs 'upgrade-current.log'
     Run-Msi -Arguments @('/i', $MsiPath, '/qn', '/norestart', '/L*V', $upgradeLog) -Log $upgradeLog
     Assert-Registration
@@ -221,8 +225,13 @@ try {
     if ((Get-FileHash -LiteralPath $userWorkbook -Algorithm SHA256).Hash -ne $userWorkbookHash) {
         throw 'Upgrade modified a user-generated workbook.'
     }
+    if ($null -ne $cacheBeforeUpgrade -and
+        (-not (Test-Path -LiteralPath $cachePath -PathType Leaf) -or (Get-FileHash -LiteralPath $cachePath -Algorithm SHA256).Hash -ne $cacheBeforeUpgrade)) {
+        throw 'Upgrade removed or modified the retained hash cache.'
+    }
     New-TestWorkbook $upgradedWorkbook
     $upgradedWorkbookHash = (Get-FileHash -LiteralPath $upgradedWorkbook -Algorithm SHA256).Hash
+    $duplicateRetained = Test-InstalledDuplicateWorkbooks (Join-Path $installDirectory 'FileListToExcel.exe') $logs
 } catch {
     $testFailure = $_
 } finally {
@@ -272,4 +281,6 @@ foreach ($result in @(
         throw "Uninstall removed or modified a user-generated workbook: $($result.Path)"
     }
 }
-Write-Host "Upgrade regression passed: $($previous.ProductVersion) -> $($current.ProductVersion), sole current ProductCode, helper, uninstall, workbook retention. Logs: $logs"
+Assert-DuplicateTestRetention $duplicateRetained
+Assert-NoInstalledHelper (Join-Path $installDirectory 'FileListToExcel.exe')
+Write-Host "Upgrade regression passed: $($previous.ProductVersion) -> $($current.ProductVersion), sole current ProductCode, existing list, duplicates, matches, selected files, SQLite reuse, uninstall, source/workbook/cache retention, no helper process. Logs: $logs"

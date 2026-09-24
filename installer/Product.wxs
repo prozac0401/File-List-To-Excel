@@ -3,13 +3,13 @@
   <Package Name="File List to Excel" Manufacturer="File List to Excel contributors"
            Version="$(var.ProductVersion)" Language="1033" Scope="perUser"
            UpgradeCode="{138C25B0-CA8D-47D7-AE96-8B5F7B2D69A1}" InstallerVersion="500">
-    <SummaryInformation Description="Explorer file lists as Excel workbooks" />
+    <SummaryInformation Description="Explorer file lists and duplicate file results as Excel workbooks" />
     <MajorUpgrade DowngradeErrorMessage="A newer version of File List to Excel is already installed."
                   Schedule="afterInstallInitialize" />
     <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
     <util:QueryNativeMachine />
     <Launch Condition="Installed OR (VersionNT64 AND WIX_NATIVE_MACHINE = 34404)" Message="File List to Excel requires Windows on an Intel or AMD 64-bit processor. ARM64 is not supported by this installer." />
-    <Property Id="ARPCOMMENTS" Value="Create Excel file lists from Windows Explorer. Windows 11: Show more options." />
+    <Property Id="ARPCOMMENTS" Value="Create Excel file lists and find duplicate files from Windows Explorer. Windows 11: Show more options." />
     <Property Id="ARPURLINFOABOUT" Value="$(var.ProjectUrl)" />
     <Property Id="ARPHELPLINK" Value="$(var.ProjectUrl)/issues" />
     <Icon Id="AppIcon" SourceFile="$(var.AppIcon)" />

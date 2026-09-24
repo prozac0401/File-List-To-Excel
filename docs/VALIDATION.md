@@ -1,3 +1,7 @@
+# Validation
+
+For v1.1.0 duplicate-finder milestone tests, actual large-file/cache measurements, live Excel/cancellation checks and installer results, see [Duplicate Finder validation](DUPLICATE_FINDER_VALIDATION.md) and the [completion report](DUPLICATE_FINDER_REPORT.md). The original release evidence below is retained as the file-list regression baseline.
+
 # Validation for v1.0.0
 
 ## Release gate

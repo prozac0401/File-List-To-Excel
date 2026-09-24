@@ -8,7 +8,7 @@ using System.Xml;
 namespace FileListToExcel.Core;
 
 /// <summary>Streams OOXML without Office automation. Each Files sheet holds at most 65,000 links.</summary>
-public sealed class WorkbookWriter
+public sealed partial class WorkbookWriter
 {
     public const int RowsPerSheet = 65_000;
     private const string Main = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
@@ -112,25 +112,30 @@ public sealed class WorkbookWriter
 
     private sealed record SheetInfo(int Id, string Name, string[] Headers);
 
-    private sealed class SheetBuilder : IDisposable
+    private sealed partial class SheetBuilder : IDisposable
     {
         private readonly ZipArchive archive;
         private readonly SheetInfo info;
         private readonly XmlWriter writer;
         private readonly List<string> links = [];
+        private readonly int headerRow;
+        private readonly int linkColumn;
         private bool disposed;
         public int Rows { get; private set; }
 
-        public SheetBuilder(ZipArchive archive, SheetInfo info, double[] widths)
+        public SheetBuilder(ZipArchive archive, SheetInfo info, double[] widths, int linkColumn = 0,
+            IReadOnlyList<(string Label, string Value)>? metadata = null)
         {
             this.archive = archive; this.info = info;
+            this.linkColumn = linkColumn;
+            headerRow = metadata is { Count: > 0 } ? metadata.Count + 2 : 1;
             writer = Xml(archive, $"xl/worksheets/sheet{info.Id}.xml");
             writer.WriteStartElement("worksheet", Main);
             writer.WriteAttributeString("xmlns", "r", null, Rel);
             writer.WriteStartElement("sheetViews", Main);
             writer.WriteStartElement("sheetView", Main); writer.WriteAttributeString("workbookViewId", "0");
             writer.WriteStartElement("pane", Main);
-            Attr(writer, "ySplit", "1", "topLeftCell", "A2", "activePane", "bottomLeft", "state", "frozen");
+            Attr(writer, "ySplit", headerRow.ToString(CultureInfo.InvariantCulture), "topLeftCell", $"A{headerRow + 1}", "activePane", "bottomLeft", "state", "frozen");
             writer.WriteEndElement(); writer.WriteEndElement(); writer.WriteEndElement();
             writer.WriteStartElement("cols", Main);
             for (int i = 0; i < widths.Length; i++)
@@ -140,14 +145,24 @@ public sealed class WorkbookWriter
                 writer.WriteEndElement();
             }
             writer.WriteEndElement(); writer.WriteStartElement("sheetData", Main);
-            writer.WriteStartElement("row", Main); writer.WriteAttributeString("r", "1");
-            for (int i = 0; i < info.Headers.Length; i++) TextCell(writer, Cell(i, 1), info.Headers[i]);
+            if (metadata is not null)
+            {
+                for (int i = 0; i < metadata.Count; i++)
+                {
+                    writer.WriteStartElement("row", Main); writer.WriteAttributeString("r", (i + 1).ToString(CultureInfo.InvariantCulture));
+                    TextCell(writer, Cell(0, i + 1), metadata[i].Label);
+                    TextCell(writer, Cell(1, i + 1), metadata[i].Value);
+                    writer.WriteEndElement();
+                }
+            }
+            writer.WriteStartElement("row", Main); writer.WriteAttributeString("r", headerRow.ToString(CultureInfo.InvariantCulture));
+            for (int i = 0; i < info.Headers.Length; i++) TextCell(writer, Cell(i, headerRow), info.Headers[i]);
             writer.WriteEndElement();
         }
 
         public void WriteEntry(FileEntry entry, string? link)
         {
-            int row = ++Rows + 1;
+            int row = ++Rows + headerRow;
             writer.WriteStartElement("row", Main); writer.WriteAttributeString("r", row.ToString(CultureInfo.InvariantCulture));
             TextCell(writer, Cell(0, row), entry.Name, link is null ? 0 : 3);
             TextCell(writer, Cell(1, row), entry.IsDirectory ? "폴더" : entry.Extension);
@@ -167,7 +182,7 @@ public sealed class WorkbookWriter
 
         public void WriteError(ScanError error)
         {
-            int row = ++Rows + 1;
+            int row = ++Rows + headerRow;
             writer.WriteStartElement("row", Main); writer.WriteAttributeString("r", row.ToString(CultureInfo.InvariantCulture));
             TextCell(writer, Cell(0, row), error.Path); TextCell(writer, Cell(1, row), error.ErrorType); TextCell(writer, Cell(2, row), error.Message);
             writer.WriteEndElement();
@@ -184,7 +199,7 @@ public sealed class WorkbookWriter
                 for (int i = 0; i < links.Count; i++)
                 {
                     if (links[i].Length == 0) continue;
-                    writer.WriteStartElement("hyperlink", Main); writer.WriteAttributeString("ref", $"A{i + 2}");
+                    writer.WriteStartElement("hyperlink", Main); writer.WriteAttributeString("ref", Cell(linkColumn, i + headerRow + 1));
                     writer.WriteAttributeString("r", "id", Rel, $"link{i + 1}"); writer.WriteEndElement();
                 }
                 writer.WriteEndElement();
@@ -201,7 +216,7 @@ public sealed class WorkbookWriter
                 rels.WriteEndElement();
             }
             using var table = Xml(archive, $"xl/tables/table{info.Id}.xml");
-            string range = $"A1:{(char)('A' + info.Headers.Length - 1)}{Math.Max(Rows, 1) + 1}";
+            string range = $"A{headerRow}:{(char)('A' + info.Headers.Length - 1)}{Math.Max(Rows, 1) + headerRow}";
             table.WriteStartElement("table", Main);
             Attr(table, "id", info.Id.ToString(CultureInfo.InvariantCulture), "name", $"FileListTable{info.Id}", "displayName", $"FileListTable{info.Id}", "ref", range, "totalsRowShown", "0");
             table.WriteStartElement("autoFilter", Main); table.WriteAttributeString("ref", range); table.WriteEndElement();

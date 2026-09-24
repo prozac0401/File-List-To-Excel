@@ -32,12 +32,21 @@ jobs:
           BUILD_REF: ${{ github.ref }}
           BUILD_TAG: ${{ github.ref_name }}
         run: |
-          $version = '1.0.0'
+          $version = '1.1.0'
           if ($env:BUILD_REF.StartsWith('refs/tags/')) {
             if ($env:BUILD_TAG -notmatch '^v(\d+\.\d+\.\d+)$') { throw 'Release tags must have the form v1.2.3.' }
             $version = $Matches[1]
           }
           ./scripts/Build.ps1 -Version $version -TestInstaller
+      - name: Verify upgrade from the published 1.0.0 package
+        run: |
+          $previous = Join-Path $PWD 'artifacts/previous-release/FileListToExcel-1.0.0-win-x64.msi'
+          New-Item -ItemType Directory -Path (Split-Path -Parent $previous) -Force | Out-Null
+          Invoke-WebRequest -Uri 'https://github.com/prozac0401/File-List-To-Excel/releases/download/v1.0.0/FileListToExcel-1.0.0-win-x64.msi' -OutFile $previous
+          if ((Get-FileHash -LiteralPath $previous -Algorithm SHA256).Hash -ne '7e43cf25af321c94aec77f6ebdd0e21a4e79a3ecb68d673c92c4a2c5674e9cc8') { throw 'The published 1.0.0 fixture checksum does not match.' }
+          $current = @(Get-ChildItem artifacts/release -Filter '*.msi' -File)
+          if ($current.Count -ne 1) { throw 'Expected exactly one current installer.' }
+          ./scripts/Test-Upgrade.ps1 -PreviousMsiPath $previous -MsiPath $current[0].FullName
       - name: Keep test evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1

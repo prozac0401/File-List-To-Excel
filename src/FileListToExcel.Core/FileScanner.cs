@@ -23,6 +23,7 @@ public sealed class FileScanner
         long count = 0, errors = 0;
         string current = string.Empty;
         var seen = new HashSet<string>(OperatingSystem.IsWindows() ? StringComparer.OrdinalIgnoreCase : StringComparer.Ordinal);
+        var traversed = new HashSet<string>(seen.Comparer);
         foreach (string input in request.Paths)
         {
             cancellationToken.ThrowIfCancellationRequested();
@@ -65,8 +66,11 @@ public sealed class FileScanner
                 cancellationToken.ThrowIfCancellationRequested();
                 current = directory.Path;
                 progress?.Report(new(count, errors, current));
+                if (request.SkipAllReparsePoints && !traversed.Add(directory.Path)) continue;
                 // Check again immediately before traversal in case a directory was replaced during scanning.
-                var traversalError = CheckTraversal(directory.Path);
+                var traversalError = request.SkipAllReparsePoints
+                    ? DuplicatePathPolicy.CheckDirectoryChain(directory.Path)
+                    : CheckTraversal(directory.Path);
                 if (traversalError is not null)
                 {
                     errors++;
