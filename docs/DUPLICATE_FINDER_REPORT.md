@@ -4,7 +4,7 @@
 
 작업 명세: `FileListToExcel_DuplicateFinder_WorkOrder.md` 전체 25절. 이 보고서는 명세 24절의 아홉 항목을 따릅니다.
 
-**구현 상태:** Milestone 1–7 구현 및 깨끗한 Windows CI의 설치·복구·제거·업그레이드 검증을 완료했습니다. 배포 대상은 v1.1.0이며, main 반영과 MSI 공개는 최종 CI를 통과한 커밋에만 수행합니다.
+**완료 상태:** Milestone 1–7 구현·검증, GitHub main 반영, v1.1.0 MSI 공개 및 공개 파일의 SHA-256 확인을 완료했습니다. 실제 테스트의 성공 범위와 로컬 미해결 사항을 아래에 구분했습니다.
 
 ## 1. 구현한 기능
 
@@ -13,8 +13,10 @@
 - 기존 Explorer 선택 전달, 메타데이터 열거, 지연 표시 Progress UI, 취소 처리, OOXML 생성기와 설치 구조를 확장했습니다. 기존 파일 목록 기능을 다시 작성하지 않았습니다.
 - 결과에는 Duplicates 또는 Matches, Summary, Errors, Skipped 시트가 있습니다. 숫자 크기·Excel 날짜·Table·AutoFilter·고정 헤더·원본 하이퍼링크와 65,000개 링크 단위 분할을 적용했습니다.
 - 원본 파일을 삭제·이동·수정하는 기능은 없습니다. 검사 실패는 파일별로 기록하고 나머지 검사를 계속합니다. 취소 시 완성되지 않은 Excel 결과를 공개하거나 열지 않습니다.
-- **M7 검증:** 깨끗한 Windows CI에서 버전 1.1.0 MSI의 설치·복구·제거와 0.9.0 → 1.1.0 업그레이드가 통과했습니다. 0.9.0은 현재 바이너리를 담은 합성 패키지입니다.
-- **배포 경로:** [PR #1](https://github.com/prozac0401/File-List-To-Excel/pull/1), [v1.1.0 릴리스](https://github.com/prozac0401/File-List-To-Excel/releases/tag/v1.1.0). 릴리스 작업은 main에 포함된 태그와 모든 설치 검증을 확인한 뒤 MSI 및 SHA256SUMS를 공개합니다.
+- **M7 검증:** 깨끗한 Windows CI에서 버전 1.1.0 MSI의 설치·복구·제거와 0.9.0 → 1.1.0 업그레이드가 통과했습니다. 0.9.0은 현재 바이너리를 담은 합성 패키지이며, 실제 공개된 1.0.0 MSI → 1.1.0 업그레이드도 추가로 통과했습니다.
+- **배포 경로:** [PR #1](https://github.com/prozac0401/File-List-To-Excel/pull/1), [v1.1.0 릴리스](https://github.com/prozac0401/File-List-To-Excel/releases/tag/v1.1.0). 릴리스 작업이 main에 포함된 태그와 모든 설치 검증을 확인한 뒤 MSI 및 SHA256SUMS를 공개했습니다. 코드 커밋은 `e231f33465f6fb9983bc8b40dd3c1228a3ead3d3`입니다.
+
+MSI: [FileListToExcel-1.1.0-win-x64.msi](https://github.com/prozac0401/File-List-To-Excel/releases/download/v1.1.0/FileListToExcel-1.1.0-win-x64.msi), 41,358,012 bytes. 공개 파일 재다운로드 SHA-256: `14af126d51684e61f39a334db63a572c69926a016d043d217e8866ee05a33ab0`.
 
 ## 2. 변경한 파일
 
@@ -111,7 +113,7 @@ cloud-only 표시 및 모든 Reparse Point를 보수적으로 제외합니다. �
 ## 4. Cache 방식
 
 - 저장소는 SQLite이며 기본 위치는 Windows LocalAppData 아래 `FileListToExcel/hash_cache.sqlite`입니다. Microsoft.Data.Sqlite 10.0.12를 사용합니다.
-- 조회 기준은 정규화된 절대 경로, 파일 크기, 최종 수정 시각의 UTC ticks, 지문/해시 알고리즘 버전입니다. Windows 타임스탬프 정밀도인 100 ns를 유지합니다.
+- 조회 기준은 정규화된 절대 경로, 파일 크기, 최종 수정 시각의 UTC ticks, 지문/해시 알고리즘 버전입니다. DateTime ticks를 저장하여 파일 시스템이 제공한 수정 시각의 정밀도를 유지합니다.
 - Quick Fingerprint, 최종 SHA-256, 마지막 확인 시각을 저장합니다. 같은 경로의 크기나 시각이 달라지면 이전 전체 해시를 새 버전으로 이어받지 않습니다.
 - WAL과 원자적 upsert를 사용하고 DB 접근을 직렬화합니다. 잠금 대기는 1초로 제한하며 캐시 사용 실패 시 원본 검사로 계속합니다.
 - 손상 또는 잘못된 스키마는 기존 파일을 격리 보존한 뒤 재생성을 시도합니다. 더 높은 버전의 스키마는 그대로 두고 해당 실행에서 캐시를 사용하지 않습니다.
@@ -150,7 +152,7 @@ Excel 출력은 Open XML 스키마, 숫자/날짜, Table/AutoFilter/고정 헤�
 
 진행 UI의 별도 취소 검증에서는 두 개의 16 GiB **sparse 파일**을 사용했습니다. 전체 SHA-256 단계에서 UI가 응답했고 취소 후 helper 종료 코드 2, 완성 결과·partial 파일 없음, helper 잔류 없음이 확인되었습니다. 이 sparse 데이터는 다음 성능 수치에 포함하지 않았습니다.
 
-증거: `artifacts/duplicate-final-tests/core-final.trx`, 최종 App의 자동 생성 TRX, `artifacts/test-results/native-duplicates.xml`, `artifacts/milestone5-cli.json`, `artifacts/milestone6-ui.json`. 단계별 기록은 [검증 문서](DUPLICATE_FINDER_VALIDATION.md)에 있습니다.
+증거: `artifacts/duplicate-final-tests/core-final.trx`, 최종 App의 자동 생성 TRX, `artifacts/test-results/native-duplicates.xml`, `artifacts/milestone5-cli.json`, `artifacts/milestone6-ui.json`. 단계별 기록은 [검증 문서](DUPLICATE_FINDER_VALIDATION.md)에 있습니다. 최종 [릴리스 CI](https://github.com/prozac0401/File-List-To-Excel/actions/runs/35952846805)는 실제 1.0.0 배포본에서의 업그레이드까지 포함해 통과했습니다.
 
 ## 7. 실제 성능 측정 결과
 
@@ -183,7 +185,7 @@ Excel 출력은 Open XML 스키마, 숫자/날짜, Table/AutoFilter/고정 헤�
 - 파일 시스템 스냅샷을 사용하지 않습니다. 계속 수정되는 트리에서는 검사 도중 변경된 파일을 제외하며, 동일한 크기·수정 시각을 유지한 내용 변경은 캐시가 감지하지 못할 수 있습니다.
 - Excel 결과의 이론적 중복 용량은 명세의 `(파일 수 - 1) × 파일 크기` 계산값입니다. 자동 삭제·이동·최신 파일 선택이나 유사한 내용 검색은 제공하지 않습니다.
 - Windows x64 클래식 Explorer 메뉴를 대상으로 합니다. ARM64 Explorer 및 Windows 11 현대식 메뉴 직접 통합은 지원 범위 밖입니다. MSI/실행 파일은 Authenticode 서명되지 않았습니다.
-- 로컬 PowerShell 5.1 설치 시험은 context-handler 레지스트리 조회에서 null을 반환해 실패했습니다. 설치한 테스트 제품은 제거했습니다. 같은 엄격한 검사가 [깨끗한 Windows CI](https://github.com/prozac0401/File-List-To-Excel/actions/runs/35952108802)에서 통과했으며, 로컬 실패를 성공으로 계산하지 않았습니다.
+- 로컬 설치 시험에서 파일 우클릭 handler 등록을 읽지 못했습니다. 추가 비교에서도 PowerShell과 Registry64 모두 해당 키가 없다고 보고했지만, MSI 로그에는 올바른 등록 기록이 있습니다. 폴더·배경·CLSID 등록은 정상이었습니다. 원인은 미해결이며 단순 PowerShell 오류로 단정하지 않습니다. 테스트 설치는 모두 제거했습니다. 같은 엄격한 검사는 [깨끗한 Windows 릴리스 CI](https://github.com/prozac0401/File-List-To-Excel/actions/runs/35952846805)에서 통과했고, 로컬 실패는 성공으로 계산하지 않았습니다.
 
 ## 9. 수동으로 확인해야 할 항목
 
