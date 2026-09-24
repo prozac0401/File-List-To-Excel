@@ -1,0 +1,48 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+  <Package Name="File List to Excel" Manufacturer="File List to Excel contributors"
+           Version="$(var.ProductVersion)" Language="1033" Scope="perUser"
+           UpgradeCode="{138C25B0-CA8D-47D7-AE96-8B5F7B2D69A1}" InstallerVersion="500">
+    <SummaryInformation Description="Explorer file lists as Excel workbooks" />
+    <MajorUpgrade DowngradeErrorMessage="A newer version of File List to Excel is already installed."
+                  Schedule="afterInstallInitialize" />
+    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+    <util:QueryNativeMachine />
+    <Launch Condition="Installed OR (VersionNT64 AND WIX_NATIVE_MACHINE = 34404)" Message="File List to Excel requires Windows on an Intel or AMD 64-bit processor. ARM64 is not supported by this installer." />
+    <Property Id="ARPCOMMENTS" Value="Create Excel file lists from Windows Explorer. Windows 11: Show more options." />
+    <Property Id="ARPURLINFOABOUT" Value="$(var.ProjectUrl)" />
+    <Property Id="ARPHELPLINK" Value="$(var.ProjectUrl)/issues" />
+    <Icon Id="AppIcon" SourceFile="$(var.AppIcon)" />
+    <Property Id="ARPPRODUCTICON" Value="AppIcon" />
+    <Property Id="ARPNOMODIFY" Value="1" />
+    <Property Id="MSIRESTARTMANAGERCONTROL" Value="Disable" />
+    <Property Id="REBOOT" Value="ReallySuppress" />
+    <StandardDirectory Id="LocalAppDataFolder">
+      <Directory Id="PerUserPrograms" Name="Programs">
+        <Directory Id="INSTALLFOLDER" Name="FileListToExcel" />
+      </Directory>
+    </StandardDirectory>
+    <Feature Id="Complete" Title="File List to Excel" Level="1">
+      <ComponentGroupRef Id="ApplicationPayload" />
+      <ComponentRef Id="ExplorerRegistration" />
+    </Feature>
+    <Component Id="ExplorerRegistration" Directory="INSTALLFOLDER" Guid="{F83AEC0C-C6B6-4F17-BA1B-5EE606019A06}" Bitness="always64">
+      <RegistryValue Root="HKCU" Key="Software\FileListToExcel" Name="InstallDirectory"
+                     Value="[INSTALLFOLDER]" Type="string" KeyPath="yes" />
+      <RegistryValue Root="HKCU" Key="Software\Classes\CLSID\{AF7A7218-8B84-4A11-9790-EB24A43EC39E}"
+                     Value="File List to Excel Explorer integration" Type="string" />
+      <RegistryValue Root="HKCU" Key="Software\Classes\CLSID\{AF7A7218-8B84-4A11-9790-EB24A43EC39E}\InprocServer32"
+                     Value="[INSTALLFOLDER]FileListToExcel.Shell.dll" Type="string" />
+      <RegistryValue Root="HKCU" Key="Software\Classes\CLSID\{AF7A7218-8B84-4A11-9790-EB24A43EC39E}\InprocServer32"
+                     Name="ThreadingModel" Value="Apartment" Type="string" />
+      <RegistryValue Root="HKCU" Key="Software\Classes\*\shellex\ContextMenuHandlers\FileListToExcel"
+                     Value="{AF7A7218-8B84-4A11-9790-EB24A43EC39E}" Type="string" />
+      <RegistryValue Root="HKCU" Key="Software\Classes\Directory\shellex\ContextMenuHandlers\FileListToExcel"
+                     Value="{AF7A7218-8B84-4A11-9790-EB24A43EC39E}" Type="string" />
+      <RegistryValue Root="HKCU" Key="Software\Classes\Directory\Background\shellex\ContextMenuHandlers\FileListToExcel"
+                     Value="{AF7A7218-8B84-4A11-9790-EB24A43EC39E}" Type="string" />
+      <RemoveFolder Id="RemoveInstallFolder" Directory="INSTALLFOLDER" On="uninstall" />
+      <RemoveFolder Id="RemoveProgramsIfEmpty" Directory="PerUserPrograms" On="uninstall" />
+    </Component>
+  </Package>
+</Wix>

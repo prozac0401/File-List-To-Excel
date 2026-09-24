@@ -1,0 +1,4 @@
+LIBRARY "FileListToExcel.Shell"
+EXPORTS
+    DllCanUnloadNow PRIVATE
+    DllGetClassObject PRIVATE
