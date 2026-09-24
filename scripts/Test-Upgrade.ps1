@@ -60,6 +60,30 @@ function Get-RelatedProductCodes($Installer, [string]$UpgradeCode) {
     } finally { Release-ComObject $related }
 }
 
+function Assert-InstalledProduct($Installer, $Package) {
+    # Query Windows Installer instead of assuming an Apps and Features registry
+    # path: per-user MSI registration can live outside the Uninstall key.
+    # INSTALLSTATE_DEFAULT (5) means installed for the current user;
+    # AssignmentType 0 identifies a per-user product.
+    if ([int]$Installer.ProductState($Package.ProductCode) -ne 5) {
+        throw "Product $($Package.ProductCode) is not installed for the current user."
+    }
+    if ($Installer.ProductInfo($Package.ProductCode, 'InstalledProductName') -ne $Package.ProductName) {
+        throw 'Windows Installer reports the wrong installed product name.'
+    }
+    if ($Installer.ProductInfo($Package.ProductCode, 'VersionString') -ne $Package.ProductVersion) {
+        throw 'Windows Installer reports the wrong installed product version.'
+    }
+    if ($Installer.ProductInfo($Package.ProductCode, 'AssignmentType') -ne '0') {
+        throw 'The product was not installed in per-user context.'
+    }
+    $localPackage = $Installer.ProductInfo($Package.ProductCode, 'LocalPackage')
+    if ([string]::IsNullOrWhiteSpace($localPackage) -or -not (Test-Path -LiteralPath $localPackage -PathType Leaf)) {
+        throw 'Windows Installer did not register an existing local package.'
+    }
+    # LocalPackage is inspected only. Maintenance always uses ProductCode.
+}
+
 function Quote-ProcessArgument([string]$Value) {
     # Test arguments are paths, MSI product codes, and fixed switches. Windows
     # filenames cannot contain a double quote; reject it rather than interpreting it.
@@ -179,9 +203,7 @@ try {
     if ($registered.Count -ne 1 -or $registered[0] -ne $previous.ProductCode) {
         throw 'The previous package is not the sole registered related product.'
     }
-    if ($windowsInstaller.ProductInfo($previous.ProductCode, 'VersionString') -ne $previous.ProductVersion) {
-        throw 'The installed previous ProductVersion is incorrect.'
-    }
+    Assert-InstalledProduct $windowsInstaller $previous
     New-TestWorkbook $userWorkbook
     $userWorkbookHash = (Get-FileHash -LiteralPath $userWorkbook -Algorithm SHA256).Hash
 
@@ -192,15 +214,9 @@ try {
     if ($registered.Count -ne 1 -or $registered[0] -ne $current.ProductCode) {
         throw 'Major upgrade did not replace the old ProductCode with only the current ProductCode.'
     }
-    if ($windowsInstaller.ProductInfo($current.ProductCode, 'VersionString') -ne $current.ProductVersion) {
-        throw 'The upgraded ProductVersion is incorrect.'
-    }
-    $oldUninstallKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\' + $previous.ProductCode
-    $newUninstallKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\' + $current.ProductCode
-    if (Test-Path -LiteralPath $oldUninstallKey) { throw 'Major upgrade left the old Apps and Features entry.' }
-    if (-not (Test-Path -LiteralPath $newUninstallKey)) { throw 'The current Apps and Features entry is missing.' }
-    if ((Get-Item -LiteralPath $newUninstallKey).GetValue('DisplayVersion') -ne $current.ProductVersion) {
-        throw 'Apps and Features reports the wrong upgraded version.'
+    Assert-InstalledProduct $windowsInstaller $current
+    if ([int]$windowsInstaller.ProductState($previous.ProductCode) -ne -1) {
+        throw 'Major upgrade left the previous product registered with Windows Installer.'
     }
     if ((Get-FileHash -LiteralPath $userWorkbook -Algorithm SHA256).Hash -ne $userWorkbookHash) {
         throw 'Upgrade modified a user-generated workbook.'
@@ -226,6 +242,12 @@ try {
             if (@(Get-RelatedProductCodes $windowsInstaller $expectedUpgradeCode).Count -ne 0) {
                 throw 'Uninstall left a related product registered.'
             }
+            foreach ($package in @($previous, $current)) {
+                # INSTALLSTATE_UNKNOWN (-1) proves the product is unregistered.
+                if ([int]$windowsInstaller.ProductState($package.ProductCode) -ne -1) {
+                    throw "Uninstall left Windows Installer product registration: $($package.ProductCode)"
+                }
+            }
         } catch { $cleanupFailures.Add($_.Exception.Message) }
     }
     Release-ComObject $windowsInstaller
@@ -239,10 +261,6 @@ if ($null -ne $testFailure) { throw $testFailure }
 
 foreach ($key in $registryPaths) {
     if (Test-Path -LiteralPath $key) { throw "Uninstall left product registry data: $key" }
-}
-foreach ($package in @($previous, $current)) {
-    $uninstallKey = 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\' + $package.ProductCode
-    if (Test-Path -LiteralPath $uninstallKey) { throw "Uninstall left an Apps and Features entry: $uninstallKey" }
 }
 if (Test-Path -LiteralPath $installDirectory) { throw "Uninstall left the application directory: $installDirectory" }
 foreach ($result in @(
