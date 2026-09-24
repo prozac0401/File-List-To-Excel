@@ -4,7 +4,7 @@
 
 작업 명세: `FileListToExcel_DuplicateFinder_WorkOrder.md` 전체 25절. 이 보고서는 명세 24절의 아홉 항목을 따릅니다.
 
-**현재 상태:** Milestone 1–6 구현·검증 완료. **[M7_PENDING]** 최종 MSI 설치·업그레이드·제거 검증 진행 중. **[PUBLISH_PENDING]** GitHub Main 반영 및 GitHub Release/MSI 공개 대기. 이 두 항목은 성공 증거 확인 후 최종 결과로 갱신합니다.
+**구현 상태:** Milestone 1–7 구현 및 깨끗한 Windows CI의 설치·복구·제거·업그레이드 검증을 완료했습니다. 배포 대상은 v1.1.0이며, main 반영과 MSI 공개는 최종 CI를 통과한 커밋에만 수행합니다.
 
 ## 1. 구현한 기능
 
@@ -13,8 +13,8 @@
 - 기존 Explorer 선택 전달, 메타데이터 열거, 지연 표시 Progress UI, 취소 처리, OOXML 생성기와 설치 구조를 확장했습니다. 기존 파일 목록 기능을 다시 작성하지 않았습니다.
 - 결과에는 Duplicates 또는 Matches, Summary, Errors, Skipped 시트가 있습니다. 숫자 크기·Excel 날짜·Table·AutoFilter·고정 헤더·원본 하이퍼링크와 65,000개 링크 단위 분할을 적용했습니다.
 - 원본 파일을 삭제·이동·수정하는 기능은 없습니다. 검사 실패는 파일별로 기록하고 나머지 검사를 계속합니다. 취소 시 완성되지 않은 Excel 결과를 공개하거나 열지 않습니다.
-- **M7 진행 상태:** [M7_PENDING] 버전 1.1.0 MSI의 실제 설치·업그레이드·제거 결과는 아직 확정하지 않았습니다.
-- **배포 진행 상태:** [PUBLISH_PENDING] Main 커밋 및 Release URL·MSI·SHA256SUMS 확인 결과를 배포 완료 후 추가합니다.
+- **M7 검증:** 깨끗한 Windows CI에서 버전 1.1.0 MSI의 설치·복구·제거와 0.9.0 → 1.1.0 업그레이드가 통과했습니다. 0.9.0은 현재 바이너리를 담은 합성 패키지입니다.
+- **배포 경로:** [PR #1](https://github.com/prozac0401/File-List-To-Excel/pull/1), [v1.1.0 릴리스](https://github.com/prozac0401/File-List-To-Excel/releases/tag/v1.1.0). 릴리스 작업은 main에 포함된 태그와 모든 설치 검증을 확인한 뒤 MSI 및 SHA256SUMS를 공개합니다.
 
 ## 2. 변경한 파일
 
@@ -138,7 +138,7 @@ cloud-only 표시 및 모든 Reparse Point를 보수적으로 제외합니다. �
 | 최종 Core Release | **90/90 통과, 실패·건너뜀 0** | 기존 26개 포함, 새 캐시 sidecar 6개까지 포함 |
 | 최종 App Release | **31/31 통과, 실패·건너뜀 0** | 기존 9개 포함, 모드·인수·일회성 요청 전달 |
 | native Explorer 통합 | **414개 검사 통과** | 표시 조건, 요청 전달, 선택 수, Unicode/ANSI verb |
-| 최종 MSI 설치·업그레이드·제거 | **[M7_PENDING] 진행 중** | 설치 패키지에 대한 최종 성공 결과는 아직 기록하지 않음 |
+| 최종 MSI 설치·복구·업그레이드·제거 | **깨끗한 Windows CI 통과** | 기존 목록·세 중복 모드·SQLite 재사용·원본/결과/캐시 보존·helper 종료 |
 
 실제 파일을 사용하여 같은 내용/다른 이름·확장자, 같은 크기/다른 내용, 다른 크기, 0 byte, 1 MiB 경계, Quick Fingerprint 샘플 밖의 변경, 한글·emoji·긴 경로, 10단계 하위 폴더, 빈 폴더, 여러/겹치는 폴더, 실제 Junction 및 ACL 접근 거부, 읽기 잠금, 파일 삭제·수정 중 검사 등을 확인했습니다.
 
@@ -183,14 +183,14 @@ Excel 출력은 Open XML 스키마, 숫자/날짜, Table/AutoFilter/고정 헤�
 - 파일 시스템 스냅샷을 사용하지 않습니다. 계속 수정되는 트리에서는 검사 도중 변경된 파일을 제외하며, 동일한 크기·수정 시각을 유지한 내용 변경은 캐시가 감지하지 못할 수 있습니다.
 - Excel 결과의 이론적 중복 용량은 명세의 `(파일 수 - 1) × 파일 크기` 계산값입니다. 자동 삭제·이동·최신 파일 선택이나 유사한 내용 검색은 제공하지 않습니다.
 - Windows x64 클래식 Explorer 메뉴를 대상으로 합니다. ARM64 Explorer 및 Windows 11 현대식 메뉴 직접 통합은 지원 범위 밖입니다. MSI/실행 파일은 Authenticode 서명되지 않았습니다.
-- **[M7_PENDING] / [PUBLISH_PENDING]** 최종 설치 패키지 검증과 Main/Release 공개는 아직 이 보고서의 완료 항목으로 표시하지 않았습니다.
+- 로컬 PowerShell 5.1 설치 시험은 context-handler 레지스트리 조회에서 null을 반환해 실패했습니다. 설치한 테스트 제품은 제거했습니다. 같은 엄격한 검사가 [깨끗한 Windows CI](https://github.com/prozac0401/File-List-To-Excel/actions/runs/35952108802)에서 통과했으며, 로컬 실패를 성공으로 계산하지 않았습니다.
 
 ## 9. 수동으로 확인해야 할 항목
 
-- **[M7_PENDING]** 최종 MSI 실제 설치 후 기존 파일 목록과 새 중복 명령 실행, 1.0.0 → 1.1.0 업그레이드, 제거 후 Explorer 등록·메뉴 및 helper 잔류 확인. 자동 설치 시험과 실제 확인 결과를 받아 최종 상태를 갱신합니다.
-- **[PUBLISH_PENDING]** GitHub Main 커밋, v1.1.0 Release URL, MSI 파일 및 SHA256SUMS의 공개·다운로드 가능 여부.
+- 사용자 PC에서 설치 직후 기존 Explorer 창과 새 창의 메뉴 표시를 확인합니다. 자동 검사에서는 실제 설치 DLL, 기존/신규 helper 명령 및 제거 후 등록·프로세스 잔류를 검사했습니다.
+- Windows/Office 버전, 보안 정책, 화면 배율이 다른 PC에서 메뉴·진행 창·하이퍼링크를 확인합니다.
 - 실제 OneDrive cloud-only 파일과 폴더를 대상으로 실행 전후 다운로드 상태·네트워크 사용량이 변하지 않는지 확인합니다.
 - 권한이 있는 별도 환경에서 파일/폴더 Symbolic Link와 순환 경로를 확인합니다. 실제 SMB 공유 및 외장 SSD에서는 권한·연결 중단·취소를 점검합니다.
-- Excel이 설치되지 않은 별도 PC에서 안내/파일 탐색기 대체 동작을 확인합니다. 해당 환경을 현재 PC에서 흉내 낸 결과를 실제 미설치 검증으로 대체하지 않았습니다.
+- Excel이 설치되지 않은 별도 PC에서 기본 .xlsx 연결 앱 또는 생성 경로 안내을 확인합니다. 해당 환경을 현재 PC에서 흉내 낸 결과를 실제 미설치 검증으로 대체하지 않았습니다.
 
 원본을 정리하거나 삭제하는 후속 동작은 수행하지 않았습니다. 성능/UI 검증용으로 생성한 대용량 fixture는 별도의 artifacts/benchmarks 경로에 보관되어 있습니다.
