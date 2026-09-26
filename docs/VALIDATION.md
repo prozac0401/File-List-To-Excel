@@ -1,5 +1,7 @@
 # Validation
 
+For v1.2.0 optional Excel file collection, see [File Collect validation](FILE_COLLECT_VALIDATION.md) and [implementation/delivery report](FILE_COLLECT_COMPLETION.md). These distinguish the tested MSI, actual Excel/UI results, installer regression status, and unexecuted environments.
+
 For v1.1.0 duplicate-finder milestone tests, actual large-file/cache measurements, live Excel/cancellation checks and installer results, see [Duplicate Finder validation](DUPLICATE_FINDER_VALIDATION.md) and the [completion report](DUPLICATE_FINDER_REPORT.md). The original release evidence below is retained as the file-list regression baseline.
 
 # Validation for v1.0.0
@@ -44,7 +46,7 @@ These checks caught and fixed an Excel-specific UTF-8 hyperlink decoding problem
 ## Reproduction
 
     dotnet test FileListToExcel.sln -c Release
-    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Build.ps1 -TestInstaller
+    powershell -NoProfile -File scripts/Build.ps1 -TestInstaller
 
 Use a clean Windows account or VM: installer tests deliberately damage only the test installation and refuse to touch a pre-existing product installation. Normal source scripts keep strict registry-repair checks enabled.
 

@@ -1,10 +1,12 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)][string]$PreviousMsiPath,
-    [Parameter(Mandatory = $true)][string]$MsiPath
+    [Parameter(Mandatory = $true)][string]$MsiPath,
+    [switch]$ContinueAfterShellRegistrationFailure
 )
 $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
+$registrationFailures = [System.Collections.Generic.List[string]]::new()
 if (-not [Environment]::Is64BitProcess) { throw 'Use 64-bit PowerShell for upgrade tests.' }
 
 $repo = Split-Path -Parent $PSScriptRoot
@@ -21,6 +23,24 @@ $registryPaths = @(
     'HKCU:\Software\Classes\Directory\shellex\ContextMenuHandlers\FileListToExcel',
     'HKCU:\Software\Classes\Directory\Background\shellex\ContextMenuHandlers\FileListToExcel'
 )
+
+
+function Assert-OptionalExcelAbsent {
+    # A silent legacy upgrade must not opt the user into the new Excel feature.
+    foreach ($view in @([Microsoft.Win32.RegistryView]::Registry64, [Microsoft.Win32.RegistryView]::Registry32)) {
+        $user = [Microsoft.Win32.RegistryKey]::OpenBaseKey('CurrentUser', $view)
+        try {
+            foreach ($path in @('Software\Classes\CLSID\{0B1E297C-42CC-48A4-A973-3AA8EAF26795}', 'Software\Classes\FileListToExcel.ExcelAddIn', 'Software\Microsoft\Office\Excel\Addins\FileListToExcel.ExcelAddIn')) {
+                $key = $user.OpenSubKey($path)
+                try { if ($key) { throw ('Unexpected optional Excel registration in ' + $view + ': ' + $path) } }
+                finally { if ($key) { $key.Dispose() } }
+            }
+        } finally { $user.Dispose() }
+    }
+    foreach ($architecture in @('x64', 'x86')) {
+        if (Test-Path -LiteralPath (Join-Path $installDirectory ('FileListToExcel.ExcelAddIn.' + $architecture + '.dll'))) { throw 'Silent upgrade unexpectedly installed the optional Excel payload.' }
+    }
+}
 
 function Release-ComObject($Value) {
     if ($null -ne $Value -and [Runtime.InteropServices.Marshal]::IsComObject($Value)) {
@@ -118,7 +138,15 @@ function Assert-Registration {
         throw 'The upgraded COM registration is invalid.'
     }
     foreach ($key in $registryPaths[2..4]) {
-        if ((Get-Item -LiteralPath $key).GetValue('') -ne $clsid) { throw "Wrong handler CLSID: $key" }
+        $handler = Get-Item -LiteralPath $key
+        $actual = if ($null -ne $handler) { $handler.GetValue('') } else { '<missing>' }
+        if ($actual -ne $clsid) {
+            $message = "Context-menu registration mismatch: $key; actual=$actual"
+            if (-not $ContinueAfterShellRegistrationFailure) { throw $message }
+            # Continue independent upgrade checks but retain a failing exit code.
+            $registrationFailures.Add($message)
+            Write-Warning $message
+        }
     }
 }
 
@@ -159,6 +187,7 @@ if (Test-Path -LiteralPath $installDirectory) {
 foreach ($key in $registryPaths) {
     if (Test-Path -LiteralPath $key) { throw "Existing product registration found at $key. Use a clean Windows account or VM." }
 }
+Assert-OptionalExcelAbsent
 if ($PreviousMsiPath -eq $MsiPath) { throw 'Previous and current MSI paths must be different.' }
 
 $windowsInstaller = New-Object -ComObject WindowsInstaller.Installer
@@ -219,6 +248,7 @@ try {
         throw 'Major upgrade did not replace the old ProductCode with only the current ProductCode.'
     }
     Assert-InstalledProduct $windowsInstaller $current
+    Assert-OptionalExcelAbsent
     if ([int]$windowsInstaller.ProductState($previous.ProductCode) -ne -1) {
         throw 'Major upgrade left the previous product registered with Windows Installer.'
     }
@@ -267,6 +297,7 @@ if ($cleanupFailures.Count -ne 0) {
     throw "Upgrade cleanup failed: $details. Logs: $logs"
 }
 if ($null -ne $testFailure) { throw $testFailure }
+Assert-OptionalExcelAbsent
 
 foreach ($key in $registryPaths) {
     if (Test-Path -LiteralPath $key) { throw "Uninstall left product registry data: $key" }
@@ -283,4 +314,7 @@ foreach ($result in @(
 }
 Assert-DuplicateTestRetention $duplicateRetained
 Assert-NoInstalledHelper (Join-Path $installDirectory 'FileListToExcel.exe')
+if ($registrationFailures.Count -ne 0) {
+    throw ("Independent upgrade/function/uninstall stages completed, but shell registration failed: " + ($registrationFailures -join '; ') + ". Logs: $logs")
+}
 Write-Host "Upgrade regression passed: $($previous.ProductVersion) -> $($current.ProductVersion), sole current ProductCode, existing list, duplicates, matches, selected files, SQLite reuse, uninstall, source/workbook/cache retention, no helper process. Logs: $logs"

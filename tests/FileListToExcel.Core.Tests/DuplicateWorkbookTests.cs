@@ -59,8 +59,8 @@ public sealed class DuplicateWorkbookTests : IDisposable
         Assert.Equal(4, sheet.Descendants(Main + "hyperlink").Count());
         Assert.All(sheet.Descendants(Main + "hyperlink"), link => Assert.StartsWith("D", (string)link.Attribute("ref")!));
         var table = Read(zip, "xl/tables/table1.xml");
-        Assert.Equal("A1:K5", (string?)table.Root?.Attribute("ref")); Assert.Single(table.Descendants(Main + "autoFilter"));
-        Assert.Equal(11, table.Descendants(Main + "tableColumn").Count());
+        Assert.Equal("A1:M5", (string?)table.Root?.Attribute("ref")); Assert.Single(table.Descendants(Main + "autoFilter"));
+        Assert.Equal(13, table.Descendants(Main + "tableColumn").Count());
         var rels = Read(zip, "xl/worksheets/_rels/sheet1.xml.rels");
         var target = rels.Descendants(PackageRel + "Relationship").Select(rel => (string?)rel.Attribute("Target")).Single(value => value?.Contains("😀", StringComparison.Ordinal) == true)!;
         Assert.Contains("%23", target); Assert.Contains("%25", target); Assert.Contains("%20", target);
@@ -92,7 +92,7 @@ public sealed class DuplicateWorkbookTests : IDisposable
         Assert.Equal("A6", (string?)sheet.Descendants(Main + "pane").Single().Attribute("topLeftCell"));
         Assert.Equal("5", (string?)sheet.Descendants(Main + "pane").Single().Attribute("ySplit"));
         Assert.Equal("A6", (string?)sheet.Descendants(Main + "hyperlink").Single().Attribute("ref"));
-        Assert.Equal("A5:H6", (string?)Read(zip, "xl/tables/table1.xml").Root?.Attribute("ref"));
+        Assert.Equal("A5:J6", (string?)Read(zip, "xl/tables/table1.xml").Root?.Attribute("ref"));
     }
 
     [Theory]
@@ -154,8 +154,8 @@ public sealed class DuplicateWorkbookTests : IDisposable
         Assert.Equal(new[] { "Duplicates", "Duplicates_2", "Summary", "Errors", "Skipped" }, Sheets(zip));
         Assert.Equal(65000, Count(zip, "xl/worksheets/sheet1.xml", "hyperlink"));
         Assert.Equal(1, Count(zip, "xl/worksheets/sheet2.xml", "hyperlink"));
-        Assert.Equal("A1:K65001", (string?)Read(zip, "xl/tables/table1.xml").Root?.Attribute("ref"));
-        Assert.Equal("A1:K2", (string?)Read(zip, "xl/tables/table2.xml").Root?.Attribute("ref"));
+        Assert.Equal("A1:M65001", (string?)Read(zip, "xl/tables/table1.xml").Root?.Attribute("ref"));
+        Assert.Equal("A1:M2", (string?)Read(zip, "xl/tables/table2.xml").Root?.Attribute("ref"));
     }
 
     [Fact]

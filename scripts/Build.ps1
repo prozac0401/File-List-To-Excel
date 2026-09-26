@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version = '1.1.0',
+    [ValidatePattern('^\d+\.\d+\.\d+$')][string]$Version = '1.2.0',
     [string]$ProjectUrl = 'https://github.com/prozac0401/File-List-To-Excel',
     [string]$NativeToolchain,
     [switch]$TestInstaller
@@ -51,6 +51,7 @@ try {
     foreach ($directory in @($publish, $release, $testResults)) { Reset-ArtifactDirectory $directory }
     Invoke-Native $dotnet @('tool', 'restore')
     Invoke-Native $dotnet @('tool', 'run', 'wix', '--', 'extension', 'add', 'WixToolset.Util.wixext/4.0.6')
+    Invoke-Native $dotnet @('tool', 'run', 'wix', '--', 'extension', 'add', 'WixToolset.UI.wixext/4.0.6')
     Invoke-Native $dotnet @('test', 'FileListToExcel.sln', '-c', 'Release', '--logger', 'trx', '--results-directory', $testResults, ('-p:Version=' + $Version))
     $trxFiles = @(Get-ChildItem -LiteralPath $testResults -Filter '*.trx' -File)
     if ($trxFiles.Count -lt 2) { throw 'Expected test results from both the core and app test projects.' }
@@ -58,6 +59,8 @@ try {
         [xml]$trx = [IO.File]::ReadAllText($trxFile.FullName)
         if ([int]$trx.TestRun.ResultSummary.Counters.executed -eq 0) { throw ('No tests ran in ' + $trxFile.Name) }
     }
+    # Compile the developer acceptance harness without launching Office.
+    Invoke-Native $dotnet @('build', 'tests/FileListToExcel.ExcelAcceptance/FileListToExcel.ExcelAcceptance.csproj', '-c', 'Release', ('-p:Version=' + $Version))
     Invoke-Native $dotnet @('publish', 'src/FileListToExcel.App/FileListToExcel.App.csproj', '-c', 'Release', '-r', 'win-x64', '--self-contained', 'true', '-o', $publish, ('-p:Version=' + $Version), '-p:DebugType=None', '-p:DebugSymbols=false')
     $cmakeCommand = Get-Command cmake -ErrorAction SilentlyContinue
     $cmakePortable = Get-ChildItem -LiteralPath (Join-Path $repo '.tools') -Directory -Filter 'cmake*' -ErrorAction SilentlyContinue | ForEach-Object { Join-Path $_.FullName 'bin/cmake.exe' } | Where-Object { Test-Path -LiteralPath $_ } | Sort-Object -Descending | Select-Object -First 1
@@ -71,7 +74,7 @@ try {
         if (-not $cmake) { throw 'Install CMake and Visual Studio 2022 C++ Build Tools (including a Windows SDK).' }
     }
     $ctest = Join-Path (Split-Path -Parent $cmake) 'ctest.exe'
-    $nativeArguments = @('-S', 'src/FileListToExcel.Shell', '-B', $nativeBuild, '-DCMAKE_BUILD_TYPE=Release', ('-DCMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE=' + (Join-Path $nativeBuild 'Release')))
+    $nativeArguments = @('-S', 'src/FileListToExcel.Shell', '-B', $nativeBuild, '-DCMAKE_BUILD_TYPE=Release', '-DBUILD_TESTING=ON', ('-DCMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE=' + (Join-Path $nativeBuild 'Release')))
     if (-not $NativeToolchain) {
         $portable = Get-ChildItem -LiteralPath (Join-Path $repo '.tools') -Directory -Filter 'llvm-mingw*' -ErrorAction SilentlyContinue | Where-Object { Test-Path -LiteralPath (Join-Path $_.FullName 'bin/x86_64-w64-mingw32-clang++.exe') } | Select-Object -ExpandProperty FullName -First 1
         if ($portable) { $NativeToolchain = $portable }
@@ -80,6 +83,7 @@ try {
         $toolBin = Join-Path ([IO.Path]::GetFullPath($NativeToolchain)) 'bin'
         $env:PATH = $toolBin + ';' + $env:PATH
         $nativeArguments += @('-G', 'Ninja', ('-DCMAKE_RC_COMPILER=' + (Join-Path $toolBin 'x86_64-w64-mingw32-windres.exe')), ('-DCMAKE_CXX_COMPILER=' + (Join-Path $toolBin 'x86_64-w64-mingw32-clang++.exe')))
+        $ninja = $null
         $ninjaCommand = Get-Command ninja -ErrorAction SilentlyContinue
         if (-not $ninjaCommand) {
             $ninja = Join-Path $repo '.tools/ninja-fast/ninja.exe'
@@ -90,11 +94,32 @@ try {
     } else { $nativeArguments += @('-G', 'Visual Studio 17 2022', '-A', 'x64') }
     Invoke-Native $cmake $nativeArguments
     Invoke-Native $cmake @('--build', $nativeBuild, '--config', 'Release', '--parallel')
-    Invoke-Native $ctest @('--test-dir', $nativeBuild, '-C', 'Release', '--output-on-failure', '--output-junit', (Join-Path $testResults 'native.xml'))
+    Invoke-Native $ctest @('--test-dir', $nativeBuild, '-C', 'Release', '--output-on-failure', '--no-tests=error', '--output-junit', (Join-Path $testResults 'native.xml'))
     $shellDll = Join-Path $nativeBuild 'Release/FileListToExcel.Shell.dll'
     if (-not (Test-Path -LiteralPath $shellDll)) { $shellDll = Join-Path $nativeBuild 'FileListToExcel.Shell.dll' }
     if (-not (Test-Path -LiteralPath $shellDll)) { throw 'Native shell DLL was not built.' }
     Copy-Item -LiteralPath $shellDll -Destination $publish
+    # Office bitness is independent from x64 Explorer. Both optional native shims dispatch to the same x64 helper.
+    $excelDlls = @{}
+    foreach ($excelArch in @('x64', 'x86')) {
+        $excelBuild = Join-Path $artifacts ('excel-' + $excelArch)
+        $excelArguments = @('-S', 'src/FileListToExcel.ExcelAddIn', '-B', $excelBuild, '-DCMAKE_BUILD_TYPE=Release', '-DBUILD_TESTING=ON', ('-DCMAKE_RUNTIME_OUTPUT_DIRECTORY_RELEASE=' + (Join-Path $excelBuild 'Release')))
+        if ($NativeToolchain) {
+            $triplet = if ($excelArch -eq 'x64') { 'x86_64' } else { 'i686' }
+            $excelArguments += @('-G', 'Ninja', ('-DCMAKE_CXX_COMPILER=' + (Join-Path $toolBin ($triplet + '-w64-mingw32-clang++.exe'))))
+            if ($ninja) { $excelArguments += '-DCMAKE_MAKE_PROGRAM=' + $ninja }
+        } else {
+            $platform = if ($excelArch -eq 'x64') { 'x64' } else { 'Win32' }
+            $excelArguments += @('-G', 'Visual Studio 17 2022', '-A', $platform)
+        }
+        Invoke-Native $cmake $excelArguments
+        Invoke-Native $cmake @('--build', $excelBuild, '--config', 'Release', '--parallel')
+        Invoke-Native $ctest @('--test-dir', $excelBuild, '-C', 'Release', '--output-on-failure', '--no-tests=error', '--output-junit', (Join-Path $testResults ('excel-' + $excelArch + '.xml')))
+        $excelDll = Join-Path $excelBuild ('Release/FileListToExcel.ExcelAddIn.' + $excelArch + '.dll')
+        if (-not (Test-Path -LiteralPath $excelDll)) { $excelDll = Join-Path $excelBuild ('FileListToExcel.ExcelAddIn.' + $excelArch + '.dll') }
+        if (-not (Test-Path -LiteralPath $excelDll)) { throw ('Excel ' + $excelArch + ' DLL was not built.') }
+        $excelDlls[$excelArch] = $excelDll
+    }
     foreach ($document in @('README.md', 'LICENSE', 'THIRD-PARTY-NOTICES.md')) {
         $source = Join-Path $repo $document
         if (Test-Path -LiteralPath $source) { Copy-Item -LiteralPath $source -Destination $publish }
@@ -164,12 +189,13 @@ try {
     $payloadFile = Join-Path $artifacts 'Payload.wxs'
     [IO.File]::WriteAllText($payloadFile, $payloadXml.ToString(), (New-Object Text.UTF8Encoding($false)))
     $msi = Join-Path $release "FileListToExcel-$Version-win-x64.msi"
-    $wixArguments = @('tool', 'run', 'wix', '--', 'build', 'installer/Product.wxs', $payloadFile, '-ext', 'WixToolset.Util.wixext/4.0.6', '-arch', 'x64', '-d', "ProductVersion=$Version", '-d', "ProjectUrl=$ProjectUrl", '-d', ('AppIcon=' + (Join-Path $repo 'src/FileListToExcel.App/app.ico')), '-o', $msi, '-wx')
+    $wixArguments = @('tool', 'run', 'wix', '--', 'build', 'installer/Product.wxs', $payloadFile, '-ext', 'WixToolset.Util.wixext/4.0.6', '-ext', 'WixToolset.UI.wixext/4.0.6', '-d', ('ExcelAddIn64=' + $excelDlls['x64']), '-d', ('ExcelAddIn32=' + $excelDlls['x86']), '-arch', 'x64', '-d', "ProductVersion=$Version", '-d', "ProjectUrl=$ProjectUrl", '-d', ('AppIcon=' + (Join-Path $repo 'src/FileListToExcel.App/app.ico')), '-o', $msi, '-wx')
     Invoke-Native $dotnet $wixArguments
     # Symbols help development but are not public installer assets.
     Get-ChildItem -LiteralPath $release -Filter '*.wixpdb' | Remove-Item -Force
     if ($TestInstaller) {
         & (Join-Path $PSScriptRoot 'Test-Installer.ps1') -MsiPath $msi
+        & (Join-Path $PSScriptRoot 'Test-Installer.ps1') -MsiPath $msi -IncludeExcelIntegration
         if ([version]$Version -le [version]'0.9.0') { throw 'Upgrade validation requires a target version newer than 0.9.0.' }
         $upgradeDirectory = Join-Path $artifacts 'installer-upgrade'
         New-Item -ItemType Directory -Path $upgradeDirectory -Force | Out-Null

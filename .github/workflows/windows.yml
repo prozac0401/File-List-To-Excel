@@ -27,23 +27,23 @@ jobs:
       - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
         with:
           dotnet-version: 10.0.401
-      - name: Build and verify installed product
+      - name: Build and verify installer OFF, ON, and synthetic upgrade
         env:
           BUILD_REF: ${{ github.ref }}
           BUILD_TAG: ${{ github.ref_name }}
         run: |
-          $version = '1.1.0'
+          $version = '1.2.0'
           if ($env:BUILD_REF.StartsWith('refs/tags/')) {
             if ($env:BUILD_TAG -notmatch '^v(\d+\.\d+\.\d+)$') { throw 'Release tags must have the form v1.2.3.' }
             $version = $Matches[1]
           }
           ./scripts/Build.ps1 -Version $version -TestInstaller
-      - name: Verify upgrade from the published 1.0.0 package
+      - name: Verify upgrade from the published 1.1.0 package
         run: |
-          $previous = Join-Path $PWD 'artifacts/previous-release/FileListToExcel-1.0.0-win-x64.msi'
+          $previous = Join-Path $PWD 'artifacts/previous-release/FileListToExcel-1.1.0-win-x64.msi'
           New-Item -ItemType Directory -Path (Split-Path -Parent $previous) -Force | Out-Null
-          Invoke-WebRequest -Uri 'https://github.com/prozac0401/File-List-To-Excel/releases/download/v1.0.0/FileListToExcel-1.0.0-win-x64.msi' -OutFile $previous
-          if ((Get-FileHash -LiteralPath $previous -Algorithm SHA256).Hash -ne '7e43cf25af321c94aec77f6ebdd0e21a4e79a3ecb68d673c92c4a2c5674e9cc8') { throw 'The published 1.0.0 fixture checksum does not match.' }
+          Invoke-WebRequest -Uri 'https://github.com/prozac0401/File-List-To-Excel/releases/download/v1.1.0/FileListToExcel-1.1.0-win-x64.msi' -OutFile $previous
+          if ((Get-FileHash -LiteralPath $previous -Algorithm SHA256).Hash -ne '14af126d51684e61f39a334db63a572c69926a016d043d217e8866ee05a33ab0') { throw 'The published 1.1.0 fixture checksum does not match.' }
           $current = @(Get-ChildItem artifacts/release -Filter '*.msi' -File)
           if ($current.Count -ne 1) { throw 'Expected exactly one current installer.' }
           ./scripts/Test-Upgrade.ps1 -PreviousMsiPath $previous -MsiPath $current[0].FullName
@@ -55,6 +55,8 @@ jobs:
           path: |
             artifacts/test-results
             artifacts/shell/Testing/Temporary
+            artifacts/excel-x64/Testing/Temporary
+            artifacts/excel-x86/Testing/Temporary
             artifacts/installer-smoke
             artifacts/upgrade-smoke
           if-no-files-found: warn

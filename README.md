@@ -41,6 +41,21 @@ Hash Cache는 `%LOCALAPPDATA%/FileListToExcel/hash_cache.sqlite`에 저장됩니
 
 Cloud-only(Offline/Recall) 파일을 내려받지 않습니다. 중복 검사에서는 안전을 위해 모든 파일/폴더 reparse point와 그 경유 경로를 제외하므로, 로컬에 내려받은 OneDrive 항목도 reparse 속성이 남아 있으면 제외됩니다. 접근 거부·사용 중·검사 중 변경된 파일은 기록하고 나머지를 계속 검사합니다. 약 700 ms 이후 단계별 진행 창과 취소 버튼이 나타납니다.
 
+
+## Excel에서 선택한 파일 복사 (v1.2, 선택 설치)
+
+v1.2.0은 Excel에서 선택한 목록 행의 실제 파일을 새 폴더로 복사하는 선택형 연동을 추가합니다. 릴리즈는 자동 테스트와 본체/Excel 연동의 설치·복구·제거, 기존 배포본 업그레이드 검사를 통과해야 게시됩니다. 실제 시험 결과와 환경별 제한은 [구현·검증 보고](https://github.com/prozac0401/File-List-To-Excel/blob/v1.2.0/docs/FILE_COLLECT_COMPLETION.md)에 기록합니다.
+
+설치 화면에서 **Excel에서 선택한 파일 복사 (선택)** 구성 요소를 선택하면 다음 Excel 시작부터 **셀 우클릭 → 파일목록 → 선택한 파일 복사…**가 준비됩니다. 기본 선택은 꺼져 있으며 기존 사용자의 무인 업그레이드에 자동 추가되지 않습니다. Excel Desktop이 필요합니다. 작업 중인 통합문서를 저장하고 Excel을 다시 여는 것 외에 VBA/.vbs 실행, 매크로 허용, 추가 기능 찾아보기/수동 체크는 필요하지 않습니다.
+
+새로 만든 Files / Duplicates / Matches 결과표에서 파일명 셀만 선택해도 됩니다. Ctrl 다중 선택을 지원하고 필터 및 수동 숨김 행은 제외합니다. 메뉴를 누른 뒤 목적 폴더 화면에서 개수·예상 크기·제외 수를 확인하고 **여기에 복사**를 누르면, 새 `모은파일_날짜_시간_식별자` 하위 폴더에 실제 파일 복사본을 모읍니다. 원본 이동·이름 변경·삭제와 기존 파일 덮어쓰기는 하지 않습니다. 같은 이름은 `이름 (2).확장자`로 구분합니다.
+
+결과 파일은 매크로 없는 일반 .xlsx입니다. 연동을 설치하지 않아도 목록과 중복 찾기는 그대로 동작합니다. 이전 결과에는 새 행 식별 정보가 없어 새 목록을 만들어야 합니다. 식별 정보는 출처 인증이 아니며 경로·파일 종류·크기·UTC 수정시간을 다시 검사합니다. cloud-only/recall/reparse 경로, 변경·삭제된 원본은 제외합니다. 내려받은 OneDrive 파일도 reparse 속성이 남아 있으면 제외될 수 있습니다. 목적 파일시스템은 ADS와 영구 ACL을 지원해야 합니다. 원본의 소유자·접근 권한 목록 자체를 복제하는 기능은 아닙니다.
+
+전달 폴더에는 복사 파일만 들어갑니다. 내부 원본 경로가 포함된 상세 결과는 `%LOCALAPPDATA%/FileListToExcel/Reports`에 보관하고 완료 화면의 **작업 결과 보기**에서 확인합니다. 취소 시 완료본을 유지하고 자체 미완료본만 정리합니다. 원본 파일에 접근할 수 없는 다른 PC에서는 목록 파일만으로 복사할 수 없습니다.
+
+일반 Windows x64에서 Excel x86/x64용 컴파일 추가 기능을 패키징합니다. 조직 추가 기능 정책·서명 요구·Office 비활성화 정책은 존중하며 자동으로 보안 설정을 낮추거나 차단을 해제하지 않습니다. 배포 바이너리는 서명되지 않았습니다. 실제로 시험한 환경과 미실행 항목은 [파일 복사 검증 기록](https://github.com/prozac0401/File-List-To-Excel/blob/v1.2.0/docs/FILE_COLLECT_VALIDATION.md), 구현 경계는 [ADR](https://github.com/prozac0401/File-List-To-Excel/blob/v1.2.0/docs/adr/0003-excel-file-collect.md), 형식은 [스키마](https://github.com/prozac0401/File-List-To-Excel/blob/v1.2.0/docs/FILE_COLLECT_SCHEMA.md)를 참조하세요.
+
 ## 대량 및 예외 처리
 
 한 번에 선택해 전달할 수 있는 입력 경로는 최대 100,000개이며, 셸 요청 파일은 32MiB까지 지원합니다. 폴더 재귀 탐색 결과 행 수에는 이 입력 개수 제한이 적용되지 않습니다.
@@ -69,13 +84,13 @@ Excel 링크 제한을 피하기 위해 시트당 65,000행을 기록하고 File
 필수: Windows x64, .NET SDK 10.0.401, Visual Studio 2022 C++ Build Tools + Windows SDK + CMake. 로컬 .tools/dotnet에 있는 동일 SDK도 사용합니다. 네이티브 빌드는 선택적으로 LLVM-MinGW를 지원합니다.
 
     dotnet test FileListToExcel.sln -c Release
-    powershell -NoProfile -ExecutionPolicy Bypass -File scripts/Build.ps1 -TestInstaller
+    powershell -NoProfile -File scripts/Build.ps1 -TestInstaller
 
 Build.ps1은 관리 코드 테스트, 자체 포함 앱 게시, 네이티브 셸 테스트, WiX MSI 빌드 및 SHA-256 생성을 수행합니다. -TestInstaller는 기존 설치가 없는 환경에서 설치·복구·제거를 검증합니다. 결과는 artifacts/release에 생성됩니다. CI는 Windows에서 같은 검증을 실행하고 main에 포함된 v* 태그만 릴리스합니다.
 
 명세: [FileListToExcel_SPEC_v1.md](https://github.com/prozac0401/File-List-To-Excel/blob/main/FileListToExcel_SPEC_v1.md). 설계: [docs/ARCHITECTURE.md](https://github.com/prozac0401/File-List-To-Excel/blob/main/docs/ARCHITECTURE.md). 검증 상태: [docs/VALIDATION.md](https://github.com/prozac0401/File-List-To-Excel/blob/main/docs/VALIDATION.md).
 
-중복 기능 명세: [작업지시서](FileListToExcel_DuplicateFinder_WorkOrder.md). [구현 보고서](docs/DUPLICATE_FINDER_REPORT.md), [Milestone별 검증](docs/DUPLICATE_FINDER_VALIDATION.md), [성능 측정 재현](tests/FileListToExcel.Benchmarks/README.md).
+중복 기능 명세: [작업지시서](FileListToExcel_DuplicateFinder_WorkOrder.md). [구현 보고서](https://github.com/prozac0401/File-List-To-Excel/blob/v1.2.0/docs/DUPLICATE_FINDER_REPORT.md), [Milestone별 검증](https://github.com/prozac0401/File-List-To-Excel/blob/v1.2.0/docs/DUPLICATE_FINDER_VALIDATION.md), [성능 측정 재현](tests/FileListToExcel.Benchmarks/README.md).
 
 ## 배포 상태
 
