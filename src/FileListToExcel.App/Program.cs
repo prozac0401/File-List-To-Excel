@@ -23,6 +23,13 @@ internal static class Program
                 if (headless) Console.WriteLine(message); else MessageBox.Show(message, ProductName, MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return 0;
             }
+            if (options.CollectRequest is { } collectRequest)
+            {
+                ApplicationConfiguration.Initialize();
+                using var collect = new CollectWindow(collectRequest);
+                Application.Run(collect);
+                return collect.ExitCode;
+            }
             if (headless)
             {
                 using var cancellation = new CancellationTokenSource();

@@ -137,7 +137,7 @@ public sealed class CoreAcceptanceTests : IDisposable
         Assert.Single(sheet.Descendants(Main + "hyperlink"));
         var table = Read(zip, "xl/tables/table1.xml");
         Assert.NotNull(table.Descendants(Main + "autoFilter").SingleOrDefault());
-        Assert.Equal(12, table.Descendants(Main + "tableColumn").Count());
+        Assert.Equal(14, table.Descendants(Main + "tableColumn").Count());
         string rels = Read(zip, "xl/worksheets/_rels/sheet1.xml.rels").ToString();
         Assert.Contains("%23", rels); Assert.Contains("TargetMode=\"External\"", rels);
         Assert.Contains("Errors", Read(zip, "xl/workbook.xml").ToString());
@@ -163,8 +163,8 @@ public sealed class CoreAcceptanceTests : IDisposable
         using var zip = ZipFile.OpenRead(destination);
         Assert.Equal(65000, CountElements(zip, "xl/worksheets/sheet1.xml", "hyperlink"));
         Assert.Equal(1, CountElements(zip, "xl/worksheets/sheet2.xml", "hyperlink"));
-        Assert.Equal("A1:L65001", (string?)Read(zip, "xl/tables/table1.xml").Root?.Attribute("ref"));
-        Assert.Equal("A1:L2", (string?)Read(zip, "xl/tables/table2.xml").Root?.Attribute("ref"));
+        Assert.Equal("A1:N65001", (string?)Read(zip, "xl/tables/table1.xml").Root?.Attribute("ref"));
+        Assert.Equal("A1:N2", (string?)Read(zip, "xl/tables/table2.xml").Root?.Attribute("ref"));
     }
 
     [Fact]

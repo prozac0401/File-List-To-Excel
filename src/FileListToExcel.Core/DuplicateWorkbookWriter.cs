@@ -5,8 +5,8 @@ namespace FileListToExcel.Core;
 
 public sealed partial class WorkbookWriter
 {
-    private static readonly string[] DuplicateHeaders = ["그룹", "그룹 파일수", "중복 절약 가능 크기", "이름", "종류", "크기", "크기(표시)", "수정일", "상대경로", "전체경로", "SHA-256"];
-    private static readonly string[] MatchHeaders = ["이름", "종류", "크기", "크기(표시)", "수정일", "상대경로", "전체경로", "SHA-256"];
+    private static readonly string[] DuplicateHeaders = ["그룹", "그룹 파일수", "중복 절약 가능 크기", "이름", "종류", "크기", "크기(표시)", "수정일", "상대경로", "전체경로", "SHA-256", FileCollectContract.ItemIdColumn, FileCollectContract.SourceRecordColumn];
+    private static readonly string[] MatchHeaders = ["이름", "종류", "크기", "크기(표시)", "수정일", "상대경로", "전체경로", "SHA-256", FileCollectContract.ItemIdColumn, FileCollectContract.SourceRecordColumn];
 
     public ExportResult WriteDuplicates(string destinationPath, DuplicateResult result, bool matches = false,
         CancellationToken cancellationToken = default)
@@ -38,10 +38,10 @@ public sealed partial class WorkbookWriter
                 {
                     resultSheets++;
                     string name = matches ? "Matches" : "Duplicates";
-                    var info = new SheetInfo(sheets.Count + 1, resultSheets == 1 ? name : $"{name}_{resultSheets}", matches ? MatchHeaders : DuplicateHeaders);
+                    var info = new SheetInfo(sheets.Count + 1, resultSheets == 1 ? name : $"{name}_{resultSheets}", matches ? MatchHeaders : DuplicateHeaders, matches ? "matches" : "duplicates");
                     sheets.Add(info);
                     return new SheetBuilder(archive, info,
-                        matches ? [36, 12, 18, 16, 22, 45, 70, 68] : [10, 14, 24, 36, 12, 18, 16, 22, 45, 70, 68],
+                        matches ? [36, 12, 18, 16, 22, 45, 70, 68, 38, 80] : [10, 14, 24, 36, 12, 18, 16, 22, 45, 70, 68, 38, 80],
                         matches ? 0 : 3, metadata);
                 }
                 SheetBuilder? sheet = null;
@@ -56,7 +56,10 @@ public sealed partial class WorkbookWriter
                         if (sheet.Rows == RowsPerSheet) { sheet.Dispose(); sheet = NextResultSheet(); }
                         var link = FileLink(file.Entry.AbsolutePath);
                         if (link is null) errors.Add(new(file.Entry.AbsolutePath, "HyperlinkUnavailable", "전체경로는 보존했지만 Excel 하이퍼링크로 표현할 수 없습니다."));
-                        sheet.WriteDuplicate(group, file, link, matches);
+                        string itemId = Guid.NewGuid().ToString("D");
+                        string sourceRecord = FileCollectContract.CreateSourceRecord(file.Entry, itemId, out string? unavailableReason);
+                        if (unavailableReason is not null) errors.Add(new(file.Entry.AbsolutePath, "FileCollectUnavailable", $"선택 파일 복사 불가: {unavailableReason}. 기존 목록 조회는 사용할 수 있습니다."));
+                        sheet.WriteDuplicate(group, file, link, matches, itemId, sourceRecord);
                         rowCount++;
                     }
                 }
@@ -126,14 +129,14 @@ public sealed partial class WorkbookWriter
 
     private sealed partial class SheetBuilder
     {
-        public void WriteDuplicate(DuplicateGroup group, DuplicateFile file, string? link, bool matches)
+        public void WriteDuplicate(DuplicateGroup group, DuplicateFile file, string? link, bool matches, string itemId, string sourceRecord)
         {
             var entry = file.Entry;
             object[] values = matches
                 ? [entry.Name, entry.Extension, entry.SizeBytes ?? 0, HumanSize(entry.SizeBytes ?? 0), entry.ModifiedAt, entry.RelativePath, entry.AbsolutePath, file.FullSha256 ?? ""]
                 : [group.GroupId, group.Files.Count, group.RecoverableBytes, entry.Name, entry.Extension, entry.SizeBytes ?? 0,
                     HumanSize(entry.SizeBytes ?? 0), entry.ModifiedAt, entry.RelativePath, entry.AbsolutePath, file.FullSha256 ?? ""];
-            WriteValues(values, link);
+            WriteValues([.. values, itemId, sourceRecord], link);
         }
 
         public void WriteValues(object[] values, string? link = null)

@@ -14,8 +14,8 @@ public sealed partial class WorkbookWriter
     private const string Main = "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
     private const string Rel = "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
     private const string PackageRel = "http://schemas.openxmlformats.org/package/2006/relationships";
-    private static readonly string[] Headers = ["이름", "종류", "크기", "크기(표시)", "수정일", "생성일", "상위 폴더", "상대경로", "전체경로", "깊이", "속성", "기준 폴더"];
-    private static readonly double[] Widths = [36, 12, 18, 16, 22, 22, 25, 45, 65, 10, 28, 55];
+    private static readonly string[] Headers = ["이름", "종류", "크기", "크기(표시)", "수정일", "생성일", "상위 폴더", "상대경로", "전체경로", "깊이", "속성", "기준 폴더", FileCollectContract.ItemIdColumn, FileCollectContract.SourceRecordColumn];
+    private static readonly double[] Widths = [36, 12, 18, 16, 22, 22, 25, 45, 65, 10, 28, 55, 38, 80];
     private static readonly XmlWriterSettings XmlSettings = new() { Encoding = new UTF8Encoding(false), CloseOutput = true, CheckCharacters = true };
 
     public ExportResult Write(string destinationPath, IEnumerable<ScanItem> items, CancellationToken cancellationToken = default)
@@ -48,7 +48,7 @@ public sealed partial class WorkbookWriter
                 SheetBuilder NextFilesSheet()
                 {
                     fileSheets++;
-                    var info = new SheetInfo(sheets.Count + 1, fileSheets == 1 ? "Files" : $"Files_{fileSheets}", Headers);
+                    var info = new SheetInfo(sheets.Count + 1, fileSheets == 1 ? "Files" : $"Files_{fileSheets}", Headers, "files");
                     sheets.Add(info);
                     return new SheetBuilder(archive, info, Widths);
                 }
@@ -64,7 +64,10 @@ public sealed partial class WorkbookWriter
                         if (sheet.Rows == RowsPerSheet) { sheet.Dispose(); sheet = NextFilesSheet(); }
                         string? link = FileLink(entry.AbsolutePath);
                         if (link is null) LogError(new(entry.AbsolutePath, "HyperlinkUnavailable", "The full path is preserved, but Excel cannot represent this path as a hyperlink (invalid URI or more than 2,079 URI characters)."));
-                        sheet.WriteEntry(entry, link);
+                        string itemId = Guid.NewGuid().ToString("D");
+                        string sourceRecord = FileCollectContract.CreateSourceRecord(entry, itemId, out string? unavailableReason);
+                        if (unavailableReason is not null) LogError(new(entry.AbsolutePath, "FileCollectUnavailable", $"선택 파일 복사 불가: {unavailableReason}. 기존 목록 조회는 사용할 수 있습니다."));
+                        sheet.WriteEntry(entry, link, itemId, sourceRecord);
                         entries++;
                     }
                 }
@@ -110,7 +113,7 @@ public sealed partial class WorkbookWriter
         }
     }
 
-    private sealed record SheetInfo(int Id, string Name, string[] Headers);
+    private sealed record SheetInfo(int Id, string Name, string[] Headers, string? CollectRole = null);
 
     private sealed partial class SheetBuilder : IDisposable
     {
@@ -142,6 +145,7 @@ public sealed partial class WorkbookWriter
             {
                 writer.WriteStartElement("col", Main);
                 Attr(writer, "min", (i + 1).ToString(CultureInfo.InvariantCulture), "max", (i + 1).ToString(CultureInfo.InvariantCulture), "width", widths[i].ToString(CultureInfo.InvariantCulture), "customWidth", "1");
+                if (info.CollectRole is not null && i >= info.Headers.Length - 2) writer.WriteAttributeString("hidden", "1");
                 writer.WriteEndElement();
             }
             writer.WriteEndElement(); writer.WriteStartElement("sheetData", Main);
@@ -160,7 +164,7 @@ public sealed partial class WorkbookWriter
             writer.WriteEndElement();
         }
 
-        public void WriteEntry(FileEntry entry, string? link)
+        public void WriteEntry(FileEntry entry, string? link, string itemId, string sourceRecord)
         {
             int row = ++Rows + headerRow;
             writer.WriteStartElement("row", Main); writer.WriteAttributeString("r", row.ToString(CultureInfo.InvariantCulture));
@@ -176,6 +180,8 @@ public sealed partial class WorkbookWriter
             NumberCell(writer, Cell(9, row), entry.Depth);
             TextCell(writer, Cell(10, row), entry.Attributes.ToString());
             TextCell(writer, Cell(11, row), entry.RootPath);
+            TextCell(writer, Cell(12, row), itemId);
+            TextCell(writer, Cell(13, row), sourceRecord);
             writer.WriteEndElement();
             links.Add(link ?? string.Empty);
         }
@@ -244,13 +250,20 @@ public sealed partial class WorkbookWriter
                 content.WriteStartElement("Override", ns); Attr(content, "PartName", name, "ContentType", $"application/vnd.openxmlformats-officedocument.spreadsheetml.{type}+xml"); content.WriteEndElement();
             }
             Override("/xl/workbook.xml", "sheet.main"); Override("/xl/styles.xml", "styles");
+            content.WriteStartElement("Override", ns);
+            Attr(content, "PartName", "/docProps/custom.xml", "ContentType", "application/vnd.openxmlformats-officedocument.custom-properties+xml");
+            content.WriteEndElement();
             foreach (var sheet in sheets) { Override($"/xl/worksheets/sheet{sheet.Id}.xml", "worksheet"); Override($"/xl/tables/table{sheet.Id}.xml", "table"); }
             content.WriteEndElement();
         }
         using (var rels = Xml(archive, "_rels/.rels"))
         {
-            rels.WriteStartElement("Relationships", PackageRel); Relationship(rels, "workbook", "officeDocument", "xl/workbook.xml"); rels.WriteEndElement();
+            rels.WriteStartElement("Relationships", PackageRel);
+            Relationship(rels, "workbook", "officeDocument", "xl/workbook.xml");
+            Relationship(rels, "customProperties", "custom-properties", "docProps/custom.xml");
+            rels.WriteEndElement();
         }
+        WriteCollectProperties(archive, sheets);
         using (var workbook = Xml(archive, "xl/workbook.xml"))
         {
             workbook.WriteStartElement("workbook", Main); workbook.WriteAttributeString("xmlns", "r", null, Rel);
@@ -266,6 +279,29 @@ public sealed partial class WorkbookWriter
         wbRels.WriteStartElement("Relationships", PackageRel);
         foreach (var sheet in sheets) Relationship(wbRels, $"sheet{sheet.Id}", "worksheet", $"worksheets/sheet{sheet.Id}.xml");
         Relationship(wbRels, "styles", "styles", "styles.xml"); wbRels.WriteEndElement();
+    }
+
+    private static void WriteCollectProperties(ZipArchive archive, List<SheetInfo> sheets)
+    {
+        const string custom = "http://schemas.openxmlformats.org/officeDocument/2006/custom-properties";
+        const string types = "http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes";
+        using var writer = Xml(archive, "docProps/custom.xml");
+        writer.WriteStartElement("Properties", custom);
+        writer.WriteAttributeString("xmlns", "vt", null, types);
+        int id = 2;
+        void Property(string name, string value)
+        {
+            writer.WriteStartElement("property", custom);
+            Attr(writer, "fmtid", "{D5CDD505-2E9C-101B-9397-08002B2CF9AE}", "pid", (id++).ToString(CultureInfo.InvariantCulture), "name", name);
+            writer.WriteElementString("vt", "lpwstr", types, value);
+            writer.WriteEndElement();
+        }
+        Property(FileCollectContract.ProductProperty, FileCollectContract.Product);
+        Property(FileCollectContract.SchemaVersionProperty, FileCollectContract.SchemaVersion);
+        Property(FileCollectContract.WorkbookIdProperty, Guid.NewGuid().ToString("D"));
+        foreach (var sheet in sheets)
+            if (sheet.CollectRole is not null) Property($"{FileCollectContract.TablePropertyPrefix}FileListTable{sheet.Id}", sheet.CollectRole);
+        writer.WriteEndElement();
     }
 
     private static void WriteStyles(ZipArchive archive)
@@ -373,7 +409,7 @@ public sealed partial class WorkbookWriter
             XmlConvert.VerifyXmlChars(result);
             return result.Length <= 2079 ? result : null;
         }
-        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or XmlException) { return null; }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or XmlException or PathTooLongException) { return null; }
     }
     private static string ExcelString(string value)
     {

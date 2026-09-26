@@ -1,23 +1,18 @@
-# File List to Excel v1.1.0
+# File List to Excel v1.2.0
 
-기존 파일 목록 내보내기에 SHA-256 기반 중복 파일 찾기를 추가했습니다.
+Excel 결과표에서 선택한 실제 파일을 새 폴더에 복사하는 **선택형 Excel 연동**을 추가했습니다. 기존 탐색기 파일 목록과 중복 찾기는 그대로 사용할 수 있습니다.
 
-- 파일 하나: 같은 폴더와 하위 폴더에서 동일한 파일 찾기
-- 파일 여러 개: 선택한 파일 안에서 중복 찾기
-- 폴더 선택 또는 폴더 빈 공간: 하위 폴더를 포함해 중복 찾기
-- 파일 크기 → Quick Fingerprint → 후보만 SHA-256 검사, SQLite Hash Cache 재사용
-- Duplicates / Matches, Summary, Errors, Skipped 시트와 원본 하이퍼링크
-- 단계별 진행 상황과 취소, 클라우드 전용 파일 및 재분석 지점 건너뛰기
-- 기존 파일 목록 메뉴와 Excel 형식 유지, 원본 삭제·이동·수정 없음
+- 설치 화면에서 **Excel에서 선택한 파일 복사**를 선택한 뒤 Excel을 다시 시작하면 셀 우클릭의 **파일목록 → 선택한 파일 복사…** 메뉴가 준비됩니다. 기본값은 꺼짐이며 기존 버전의 무인 업그레이드에서 자동 추가되지 않습니다.
+- 새 Files / Duplicates / Matches 결과표에서 파일명 셀만 선택해도 됩니다. 현재 Excel의 필터·정렬·Ctrl 다중 선택을 반영하고 숨긴 행은 제외합니다.
+- 목적지를 한 번 선택하면 새 하위 폴더에 복사합니다. 같은 이름은 번호로 구분하며 원본 이동·삭제와 기존 파일 덮어쓰기는 하지 않습니다.
+- 삭제·변경된 파일, cloud-only/recall 및 reparse 경유 경로는 제외합니다. 취소 시 완료본은 유지하고 자체 미완료본만 정리합니다.
+- 상세 결과는 제품 LocalAppData의 Reports에 보관하며 전달 폴더에는 복사한 파일만 들어갑니다. 완료 화면에서 작업 결과를 확인할 수 있습니다.
+- Excel x86/x64용 네이티브 추가 기능을 포함합니다. VBA 실행, 매크로 허용 또는 수동 COM 등록은 필요하지 않습니다.
 
-다운로드: **FileListToExcel-1.1.0-win-x64.msi**. SHA256SUMS.txt로 무결성을 확인할 수 있습니다. Windows 11 x64의 **더 많은 옵션 표시** 메뉴를 사용하며, .NET을 포함한 사용자별 설치로 관리자 권한이 필요하지 않습니다.
+**다운로드:** FileListToExcel-1.2.0-win-x64.msi 및 SHA256SUMS.txt. Windows 11 x64 사용자별 설치이며 관리자 권한과 별도 .NET 설치가 필요하지 않습니다. Excel 연동에는 Excel Desktop과 이번 버전에서 새로 만든 결과표가 필요합니다.
 
-5,102개 파일(총 4.52 GB, 실제 2 GiB 초과 파일 2개 포함)에서 첫 검사 44.72초, 캐시 재검사 0.87초를 측정했습니다. 크기 후보 102개 중 전체 해시는 6개만 계산했고, 재검사는 원본 내용을 읽지 않았습니다. 측정 환경과 OS 파일 캐시의 영향을 포함한 상세 조건은 [검증 기록](https://github.com/prozac0401/File-List-To-Excel/blob/main/docs/DUPLICATE_FINDER_VALIDATION.md)을 참고하세요.
+릴리즈 워크플로는 관리 코드·네이티브 테스트, MSI 검증, 기본/Excel 포함 설치·복구·제거, 시험용 이전 버전 및 실제 1.1.0 배포본 업그레이드를 모두 통과한 MSI만 게시합니다. 실제 Excel x64의 자동 연결·필터 선택 복사·결과 화면도 별도로 검증했습니다. 범위와 상세 결과는 [1.2.0 검증 기록](https://github.com/prozac0401/File-List-To-Excel/blob/v1.2.0/docs/FILE_COLLECT_VALIDATION.md)을 참고하세요.
 
-캐시는 `%LOCALAPPDATA%\FileListToExcel\hash_cache.sqlite`에 저장됩니다. 파일 경로·크기·최종 수정 시각이 같으면 재사용하며, `--no-cache`로 우회할 수 있습니다. 제거 시 사용자가 만든 Excel 파일과 캐시는 보존됩니다.
+**제한:** 선택한 보이는 데이터 행은 최대 10,000개, 요청은 32 MiB입니다. 모든 reparse 경유 경로를 보수적으로 제외하므로 로컬 OneDrive 파일도 제외될 수 있습니다. 실제 Excel x86, 조직 보안 정책, 재부팅/재로그인, 원격 SMB 장애와 다른 추가 기능의 모든 공존 조합은 검증하지 않았습니다. MSI와 실행 파일은 Authenticode 서명되지 않았으며 ARM64 탐색기는 지원하지 않습니다.
 
-보수적인 정책으로 모든 파일·폴더 재분석 지점(일부 로컬 OneDrive 파일 포함)을 건너뜁니다. 실제 OneDrive cloud-only 계정, 원격 SMB/외장 SSD 및 Excel 미설치 PC는 이번 검증에 포함되지 않았습니다. MSI/실행 파일은 Authenticode 서명되지 않았고 ARM64 탐색기는 지원하지 않습니다.
-
-설치·사용법은 [README](https://github.com/prozac0401/File-List-To-Excel/blob/v1.1.0/README.md), 구현·테스트·제한사항은 [완료 보고서](https://github.com/prozac0401/File-List-To-Excel/blob/main/docs/DUPLICATE_FINDER_REPORT.md)를 참고하세요.
-
-최종 Windows CI에서 기존 기능, 설치·손상 등록 복구·제거, 실제 1.0.0 배포본에서의 업그레이드가 통과했습니다. 로컬 테스트 PC에서는 파일 우클릭 handler 등록 조회 문제가 재현되어 원인이 미해결입니다(폴더/배경 등록은 확인). 이 환경의 실패와 진단 결과를 완료 보고서에 명시했으며, 테스트 기준을 완화하지 않았습니다.
+[설치·사용 안내](https://github.com/prozac0401/File-List-To-Excel/blob/v1.2.0/README.md) · [구현 보고](https://github.com/prozac0401/File-List-To-Excel/blob/v1.2.0/docs/FILE_COLLECT_COMPLETION.md)

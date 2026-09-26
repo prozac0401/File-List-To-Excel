@@ -5,12 +5,18 @@ using System.Text.Json.Serialization;
 namespace FileListToExcel.App;
 
 public sealed record AppOptions(ScanRequest? Request, string? OutputPath, bool NoOpen, bool Help, bool Version,
-    DuplicateRequest? DuplicateRequest = null, bool NoCache = false);
+    DuplicateRequest? DuplicateRequest = null, bool NoCache = false, CollectRequest? CollectRequest = null);
 
 public static class CommandLine
 {
     public static AppOptions Parse(string[] args)
     {
+        if (args.TakeWhile(a => a != "--").Contains("--collect-request", StringComparer.Ordinal))
+        {
+            if (args.Length != 2 || args[0] != "--collect-request")
+                throw new ArgumentException("복사 요청은 다른 CLI 옵션과 함께 사용할 수 없습니다.");
+            return new(null, null, false, false, false, CollectRequest: CollectRequestReader.Read(args[1]));
+        }
         ScanMode? mode = null;
         DuplicateMode? duplicateMode = null;
         var paths = new List<string>();

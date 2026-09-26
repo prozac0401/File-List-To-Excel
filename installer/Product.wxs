@@ -1,12 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
-<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util">
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs" xmlns:util="http://wixtoolset.org/schemas/v4/wxs/util" xmlns:ui="http://wixtoolset.org/schemas/v4/wxs/ui">
   <Package Name="File List to Excel" Manufacturer="File List to Excel contributors"
-           Version="$(var.ProductVersion)" Language="1033" Scope="perUser"
+           Version="$(var.ProductVersion)" Language="1033" Codepage="949" Scope="perUser"
            UpgradeCode="{138C25B0-CA8D-47D7-AE96-8B5F7B2D69A1}" InstallerVersion="500">
     <SummaryInformation Description="Explorer file lists and duplicate file results as Excel workbooks" />
     <MajorUpgrade DowngradeErrorMessage="A newer version of File List to Excel is already installed."
                   Schedule="afterInstallInitialize" />
-    <MediaTemplate EmbedCab="yes" CompressionLevel="high" />
+    <MediaTemplate EmbedCab="yes" CompressionLevel="mszip" />
     <util:QueryNativeMachine />
     <Launch Condition="Installed OR (VersionNT64 AND WIX_NATIVE_MACHINE = 34404)" Message="File List to Excel requires Windows on an Intel or AMD 64-bit processor. ARM64 is not supported by this installer." />
     <Property Id="ARPCOMMENTS" Value="Create Excel file lists and find duplicate files from Windows Explorer. Windows 11: Show more options." />
@@ -22,9 +22,29 @@
         <Directory Id="INSTALLFOLDER" Name="FileListToExcel" />
       </Directory>
     </StandardDirectory>
-    <Feature Id="Complete" Title="File List to Excel" Level="1">
+    <ui:WixUI Id="WixUI_FeatureTree" />
+    <WixVariable Id="WixUILicenseRtf" Value="installer/License.rtf" />
+    <Property Id="FLTEXCELLOADBEHAVIOR" Value="3" />
+    <Property Id="EXISTINGFLTEXCELLOADBEHAVIOR">
+      <RegistrySearch Id="ExistingExcelLoadBehavior" Root="HKCU" Key="Software\Microsoft\Office\Excel\Addins\FileListToExcel.ExcelAddIn" Name="LoadBehavior" Type="raw" Bitness="always64" />
+    </Property>
+    <SetProperty Id="FLTEXCELLOADBEHAVIOR" Action="PreserveExcelLoad0" Value="0" Before="CostInitialize" Condition="EXISTINGFLTEXCELLOADBEHAVIOR = &quot;#0&quot;" />
+    <SetProperty Id="FLTEXCELLOADBEHAVIOR" Action="PreserveExcelLoad1" Value="1" Before="CostInitialize" Condition="EXISTINGFLTEXCELLOADBEHAVIOR = &quot;#1&quot;" />
+    <SetProperty Id="FLTEXCELLOADBEHAVIOR" Action="PreserveExcelLoad2" Value="2" Before="CostInitialize" Condition="EXISTINGFLTEXCELLOADBEHAVIOR = &quot;#2&quot;" />
+    <SetProperty Id="FLTEXCELLOADBEHAVIOR" Action="PreserveExcelLoad3" Value="3" Before="CostInitialize" Condition="EXISTINGFLTEXCELLOADBEHAVIOR = &quot;#3&quot;" />
+    <SetProperty Id="FLTEXCELLOADBEHAVIOR" Action="PreserveExcelLoad8" Value="8" Before="CostInitialize" Condition="EXISTINGFLTEXCELLOADBEHAVIOR = &quot;#8&quot;" />
+    <SetProperty Id="FLTEXCELLOADBEHAVIOR" Action="PreserveExcelLoad9" Value="9" Before="CostInitialize" Condition="EXISTINGFLTEXCELLOADBEHAVIOR = &quot;#9&quot;" />
+    <SetProperty Id="FLTEXCELLOADBEHAVIOR" Action="PreserveExcelLoad16" Value="16" Before="CostInitialize" Condition="EXISTINGFLTEXCELLOADBEHAVIOR = &quot;#16&quot;" />
+    <SetProperty Id="FLTEXCELLOADBEHAVIOR" Action="PreserveExcelLoad17" Value="17" Before="CostInitialize" Condition="EXISTINGFLTEXCELLOADBEHAVIOR = &quot;#17&quot;" />
+    <SetProperty Id="FLTEXCELLOADBEHAVIOR" Action="PreserveUnknownExcelLoad" Value="0" Before="CostInitialize" Condition="EXISTINGFLTEXCELLOADBEHAVIOR AND NOT (EXISTINGFLTEXCELLOADBEHAVIOR = &quot;#0&quot; OR EXISTINGFLTEXCELLOADBEHAVIOR = &quot;#1&quot; OR EXISTINGFLTEXCELLOADBEHAVIOR = &quot;#2&quot; OR EXISTINGFLTEXCELLOADBEHAVIOR = &quot;#3&quot; OR EXISTINGFLTEXCELLOADBEHAVIOR = &quot;#8&quot; OR EXISTINGFLTEXCELLOADBEHAVIOR = &quot;#9&quot; OR EXISTINGFLTEXCELLOADBEHAVIOR = &quot;#16&quot; OR EXISTINGFLTEXCELLOADBEHAVIOR = &quot;#17&quot;)" />
+    <Feature Id="Complete" Title="File List to Excel" Description="Required Explorer file lists and duplicate finder." Level="1" AllowAbsent="no">
       <ComponentGroupRef Id="ApplicationPayload" />
       <ComponentRef Id="ExplorerRegistration" />
+      <Feature Id="ExcelIntegration" Title="Excel에서 선택한 파일 복사 (선택)" Description="Excel 우클릭 메뉴를 추가하며 선택한 실제 파일의 복사본을 만듭니다. 기본 선택 안 함. 저장 후 Excel을 다시 시작하세요. VBA나 매크로 허용은 필요하지 않습니다." Level="2">
+        <ComponentRef Id="ExcelAddIn64" />
+        <ComponentRef Id="ExcelAddIn32" />
+        <ComponentRef Id="ExcelAddInRegistration" />
+      </Feature>
     </Feature>
     <Component Id="ExplorerRegistration" Directory="INSTALLFOLDER" Guid="{F83AEC0C-C6B6-4F17-BA1B-5EE606019A06}" Bitness="always64">
       <RegistryValue Root="HKCU" Key="Software\FileListToExcel" Name="InstallDirectory"
@@ -43,6 +63,25 @@
                      Value="{AF7A7218-8B84-4A11-9790-EB24A43EC39E}" Type="string" />
       <RemoveFolder Id="RemoveInstallFolder" Directory="INSTALLFOLDER" On="uninstall" />
       <RemoveFolder Id="RemoveProgramsIfEmpty" Directory="PerUserPrograms" On="uninstall" />
+    </Component>
+    <Component Id="ExcelAddIn64" Directory="INSTALLFOLDER" Guid="{23DADAB4-AC19-4FF8-98C0-E6E16C8183F3}" Bitness="always64">
+      <File Id="ExcelAddInDll64" Source="$(var.ExcelAddIn64)" />
+      <RegistryValue Root="HKCU" Key="Software\Classes\CLSID\{0B1E297C-42CC-48A4-A973-3AA8EAF26795}\InprocServer32" Value="[#ExcelAddInDll64]" Type="string" KeyPath="yes" />
+      <RegistryValue Root="HKCU" Key="Software\Classes\CLSID\{0B1E297C-42CC-48A4-A973-3AA8EAF26795}\InprocServer32" Name="ThreadingModel" Value="Apartment" Type="string" />
+      <RegistryValue Root="HKCU" Key="Software\Classes\CLSID\{0B1E297C-42CC-48A4-A973-3AA8EAF26795}\ProgID" Value="FileListToExcel.ExcelAddIn" Type="string" />
+    </Component>
+    <Component Id="ExcelAddIn32" Directory="INSTALLFOLDER" Guid="{F7281247-093D-4F2A-9877-1C71021BF2A8}" Bitness="always32">
+      <File Id="ExcelAddInDll32" Source="$(var.ExcelAddIn32)" />
+      <RegistryValue Root="HKCU" Key="Software\Classes\CLSID\{0B1E297C-42CC-48A4-A973-3AA8EAF26795}\InprocServer32" Value="[#ExcelAddInDll32]" Type="string" KeyPath="yes" />
+      <RegistryValue Root="HKCU" Key="Software\Classes\CLSID\{0B1E297C-42CC-48A4-A973-3AA8EAF26795}\InprocServer32" Name="ThreadingModel" Value="Apartment" Type="string" />
+      <RegistryValue Root="HKCU" Key="Software\Classes\CLSID\{0B1E297C-42CC-48A4-A973-3AA8EAF26795}\ProgID" Value="FileListToExcel.ExcelAddIn" Type="string" />
+    </Component>
+    <Component Id="ExcelAddInRegistration" Directory="INSTALLFOLDER" Guid="{11D20F9D-3B53-4EB1-9308-BC1E1499216C}" Bitness="always64">
+      <RegistryValue Root="HKCU" Key="Software\Classes\FileListToExcel.ExcelAddIn\CLSID" Value="{0B1E297C-42CC-48A4-A973-3AA8EAF26795}" Type="string" KeyPath="yes" />
+      <RegistryValue Root="HKCU" Key="Software\Microsoft\Office\Excel\Addins\FileListToExcel.ExcelAddIn" Name="FriendlyName" Value="File List to Excel - 선택한 파일 복사" Type="string" />
+      <RegistryValue Root="HKCU" Key="Software\Microsoft\Office\Excel\Addins\FileListToExcel.ExcelAddIn" Name="Description" Value="선택한 보이는 결과 행의 실제 파일을 새 폴더에 복사합니다. Excel 재시작 후 자동 준비됩니다." Type="string" />
+      <RegistryValue Root="HKCU" Key="Software\Microsoft\Office\Excel\Addins\FileListToExcel.ExcelAddIn" Name="LoadBehavior" Value="[FLTEXCELLOADBEHAVIOR]" Type="integer" />
+      <RegistryValue Root="HKCU" Key="Software\Microsoft\Office\Excel\Addins\FileListToExcel.ExcelAddIn" Name="CommandLineSafe" Value="0" Type="integer" />
     </Component>
   </Package>
 </Wix>
