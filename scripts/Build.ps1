@@ -25,6 +25,13 @@ function Invoke-Native([string]$Command, [string[]]$Arguments) {
     & $Command @Arguments
     if ($LASTEXITCODE -ne 0) { throw "$Command failed with exit code $LASTEXITCODE" }
 }
+function Invoke-ValidationScript([string]$Script, [hashtable]$Parameters) {
+    # PowerShell child scripts may use exit instead of throw. That sets LASTEXITCODE
+    # but returns to this caller, so an explicit nonzero check is part of the gate.
+    $global:LASTEXITCODE = 0
+    & $Script @Parameters
+    if ($LASTEXITCODE -ne 0) { throw "$Script failed with exit code $LASTEXITCODE" }
+}
 function Reset-ArtifactDirectory([string]$Path) {
     $resolved = [IO.Path]::GetFullPath($Path)
     $boundary = [IO.Path]::GetFullPath($artifacts).TrimEnd('\') + '\'
@@ -194,8 +201,8 @@ try {
     # Symbols help development but are not public installer assets.
     Get-ChildItem -LiteralPath $release -Filter '*.wixpdb' | Remove-Item -Force
     if ($TestInstaller) {
-        & (Join-Path $PSScriptRoot 'Test-Installer.ps1') -MsiPath $msi
-        & (Join-Path $PSScriptRoot 'Test-Installer.ps1') -MsiPath $msi -IncludeExcelIntegration
+        Invoke-ValidationScript (Join-Path $PSScriptRoot 'Test-Installer.ps1') @{ MsiPath = $msi }
+        Invoke-ValidationScript (Join-Path $PSScriptRoot 'Test-Installer.ps1') @{ MsiPath = $msi; IncludeExcelIntegration = $true }
         if ([version]$Version -le [version]'0.9.0') { throw 'Upgrade validation requires a target version newer than 0.9.0.' }
         $upgradeDirectory = Join-Path $artifacts 'installer-upgrade'
         New-Item -ItemType Directory -Path $upgradeDirectory -Force | Out-Null
@@ -206,7 +213,7 @@ try {
             if ($previousArguments[$index] -eq $msi) { $previousArguments[$index] = $previousMsi }
         }
         Invoke-Native $dotnet $previousArguments
-        & (Join-Path $PSScriptRoot 'Test-Upgrade.ps1') -PreviousMsiPath $previousMsi -MsiPath $msi
+        Invoke-ValidationScript (Join-Path $PSScriptRoot 'Test-Upgrade.ps1') @{ PreviousMsiPath = $previousMsi; MsiPath = $msi }
     }
     $hash = (Get-FileHash -LiteralPath $msi -Algorithm SHA256).Hash.ToLowerInvariant()
     [IO.File]::WriteAllText((Join-Path $release 'SHA256SUMS.txt'), "$hash  $([IO.Path]::GetFileName($msi))" + [Environment]::NewLine, (New-Object Text.UTF8Encoding($false)))
